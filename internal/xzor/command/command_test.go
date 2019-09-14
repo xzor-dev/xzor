@@ -8,9 +8,10 @@ import (
 
 func TestCommands(t *testing.T) {
 	commander := &command.Commander{}
-	command := &testCommand{
+	c := &testCommand{
 		name: "reverse",
-		callback: func(data []byte) ([]byte, error) {
+		callback: func(args []interface{}) ([]byte, error) {
+			data := args[0].([]byte)
 			res := make([]byte, len(data))
 			for i, d := range data {
 				j := len(data) - 1 - i
@@ -19,30 +20,42 @@ func TestCommands(t *testing.T) {
 			return res, nil
 		},
 	}
-	commander.Register(command)
+	commander.Register(c)
 
 	testStr := "hello"
 	expected := "olleh"
-	res, err := commander.Execute("reverse", []byte(testStr))
+	args := make([]interface{}, 1)
+	args[0] = []byte(testStr)
+	res, err := commander.Execute("reverse", args)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	if string(res) != expected {
-		t.Fatalf("unexpected result from command: wanted %s, got %s", expected, res)
+	resValue, ok := res.Value.([]byte)
+	if !ok {
+		t.Fatal("couldn't convert response value to byte slice")
+	}
+	if string(resValue) != expected {
+		t.Fatalf("unexpected result from command: wanted %s, got %s", expected, resValue)
 	}
 }
 
 var _ command.Command = &testCommand{}
 
 type testCommand struct {
-	name     string
-	callback func([]byte) ([]byte, error)
+	name     command.Name
+	callback func([]interface{}) ([]byte, error)
 }
 
-func (c *testCommand) Execute(data []byte) ([]byte, error) {
-	return c.callback(data)
+func (c *testCommand) Execute(args []interface{}) (*command.Response, error) {
+	res, err := c.callback(args)
+	if err != nil {
+		return nil, err
+	}
+	return &command.Response{
+		Value: res,
+	}, nil
 }
 
-func (c *testCommand) Name() string {
+func (c *testCommand) Name() command.Name {
 	return c.name
 }

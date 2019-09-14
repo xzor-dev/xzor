@@ -5,33 +5,33 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/xzor-dev/xzor/internal/xzor/storage"
+	"github.com/xzor-dev/xzor/internal/xzor/block"
 )
 
-var _ storage.ChainStore = &ChainStore{}
+var _ block.ChainStore = &ChainStore{}
 
 // ChainStore provides reading and writing of chains to the file system.
 type ChainStore struct {
 	RootDir string
 }
 
-func (s *ChainStore) filename(hash storage.ChainHash) string {
+func (s *ChainStore) filename(hash block.ChainHash) string {
 	return s.RootDir + "/" + string(hash)
 }
 
 // Delete removes the chain's data file.
-func (s *ChainStore) Delete(hash storage.ChainHash) error {
+func (s *ChainStore) Delete(hash block.ChainHash) error {
 	return os.Remove(s.filename(hash))
 }
 
 // Read chain's data using its hash.
-func (s *ChainStore) Read(hash storage.ChainHash) (*storage.Chain, error) {
+func (s *ChainStore) Read(hash block.ChainHash) (*block.Chain, error) {
 	filename := s.filename(hash)
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	c := &storage.Chain{}
+	c := &block.Chain{}
 	err = json.Unmarshal(data, c)
 	if err != nil {
 		return nil, err
@@ -40,7 +40,7 @@ func (s *ChainStore) Read(hash storage.ChainHash) (*storage.Chain, error) {
 }
 
 // Write a chain to the file system.
-func (s *ChainStore) Write(c *storage.Chain) error {
+func (s *ChainStore) Write(c *block.Chain) error {
 	err := os.MkdirAll(s.RootDir, 0666)
 	if err != nil {
 		return err

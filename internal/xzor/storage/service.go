@@ -2,49 +2,38 @@ package storage
 
 import "errors"
 
-// Service facilitates the creation and management of stored data.
+// Service handles the IO of stored records.
 type Service struct {
-	ChainStore ChainStore
+	EncodeDecoder RecordEncodeDecoder
+	Store         RecordStore
 }
 
-// NewChain creates new chain with a genesis block.
-func (s *Service) NewChain() (*Chain, error) {
-	hash, err := NewChainHash()
+// Delete removes a record by its ID from the record store.
+func (s *Service) Delete(id RecordID) error {
+	return s.Store.Delete(id)
+}
+
+// Read gets a record's encoded data from the store and decodes it into the provided record.
+func (s *Service) Read(id RecordID, record interface{}) error {
+	if s.EncodeDecoder == nil {
+		return errors.New("no EncodeDecoder provided to the service")
+	}
+
+	data, err := s.Store.Read(id)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	c := &Chain{
-		Blocks: make([]*Block, 0),
-		Hash:   hash,
+	return s.EncodeDecoder.DecodeRecord(data, record)
+}
+
+// Write encodes a record and writes it to the record store.
+func (s *Service) Write(id RecordID, record interface{}) error {
+	if s.EncodeDecoder == nil {
+		return errors.New("no EncodeDecoder provided to t he service")
 	}
-	b := c.NewBlock(nil)
-	err = c.AddBlock(b)
+	data, err := s.EncodeDecoder.EncodeRecord(record)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return c, nil
-}
-
-// DeleteChain deletes a chain from the chain store.
-func (s *Service) DeleteChain(hash ChainHash) error {
-	if s.ChainStore == nil {
-		return errors.New("no ChainStore provided to the storage service")
-	}
-	return s.ChainStore.Delete(hash)
-}
-
-// ReadChain reads a chain from the chain store using its hash.
-func (s *Service) ReadChain(hash ChainHash) (*Chain, error) {
-	if s.ChainStore == nil {
-		return nil, errors.New("no ChainStore provided to the storage service")
-	}
-	return s.ChainStore.Read(hash)
-}
-
-// WriteChain writes a chain to the chain store.
-func (s *Service) WriteChain(c *Chain) error {
-	if s.ChainStore == nil {
-		return errors.New("no ChainStore provided to the storage service")
-	}
-	return s.ChainStore.Write(c)
+	return s.Store.Write(id, data)
 }

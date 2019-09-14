@@ -1,115 +1,129 @@
 package storage_test
 
 import (
-	"log"
+	"errors"
 	"os"
 	"testing"
 
 	"github.com/xzor-dev/xzor/internal/xzor/storage"
 	"github.com/xzor-dev/xzor/internal/xzor/storage/file"
+	"github.com/xzor-dev/xzor/internal/xzor/storage/json"
 )
 
-func TestChain(t *testing.T) {
-	c1 := &storage.Chain{}
-	b1 := c1.NewBlock(nil)
-	err := c1.AddBlock(b1)
+func TestStorageService(t *testing.T) {
+	s := &storage.Service{
+		EncodeDecoder: &testEncodeDecoder{},
+		Store:         &testRecordStore{},
+	}
+	id := storage.RecordID("test-id")
+	valueA := "test value"
+	err := s.Write(id, valueA)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	b2 := c1.NewBlock(nil)
-	err = c1.AddBlock(b2)
+	var valueB string
+	err = s.Read(id, &valueB)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	if b2.Hash == b1.Hash {
-		t.Fatal("block has the same hash as the previous block")
-	}
-	if b2.Index != 1 {
-		t.Fatalf("expected block to have an index of 1, got %d", b2.Index)
-	}
 
-	b3 := c1.NewBlock(nil)
-	b3.Hash = "bad_hash"
-	err = c1.AddBlock(b3)
-	if err == nil {
-		t.Fatal("expected an error when attempting to add a bad block to the chain")
+	if valueA != valueB {
+		t.Fatalf("unexpected data read from storage: wanted '%s', got '%s'", valueA, valueB)
+	}
+	err = s.Delete(id)
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
 }
 
-func TestService(t *testing.T) {
+func TestJSONFileStorage(t *testing.T) {
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	srv := &storage.Service{
-		ChainStore: &file.ChainStore{
+	s := &storage.Service{
+		EncodeDecoder: &json.EncodeDecoder{},
+		Store: &file.RecordStore{
 			RootDir: dir + "/testdata",
 		},
 	}
-	c1, err := srv.NewChain()
+
+	type testRecord struct {
+		Foo string `json:"foo"`
+		Bar int    `json:"bar"`
+	}
+	recordID := storage.RecordID("foo-bar")
+	recordA := &testRecord{
+		Foo: "hello",
+		Bar: 42,
+	}
+
+	err = s.Write(recordID, recordA)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	if c1.Hash == "" {
-		t.Fatal("expected newly created chain to have a hash")
-	}
-	if len(c1.Blocks) != 1 {
-		t.Fatalf("expected chain to have 1 block, got %d", len(c1.Blocks))
-	}
-	err = srv.WriteChain(c1)
+
+	recordB := &testRecord{}
+	err = s.Read(recordID, recordB)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	c1A, err := srv.ReadChain(c1.Hash)
+	if recordA.Foo != recordB.Foo || recordA.Bar != recordB.Bar {
+		t.Fatalf("records do not match: wanted %v, got %v", recordA, recordB)
+	}
+
+	err = s.Delete(recordID)
 	if err != nil {
 		t.Fatalf("%v", err)
-	}
-	if c1A.Hash != c1.Hash {
-		t.Fatalf("expected loaded chain to have same hash: wanted %s, got %s", c1.Hash, c1A.Hash)
-	}
-	err = srv.DeleteChain(c1.Hash)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	_, err = srv.ReadChain(c1.Hash)
-	if err == nil {
-		t.Fatalf("expected an error when reading deleted chain")
 	}
 }
 
-func TestConcurrentWrites(t *testing.T) {
-	s := &storage.Service{}
-	c, err := s.NewChain()
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+var _ storage.RecordEncodeDecoder = &testEncodeDecoder{}
 
-	write := func(t *testing.T, c *storage.Chain, count int) {
-		for i := 0; i < count; i++ {
-			b := c.NewBlock(nil)
-			err := c.AddBlock(b)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-		}
-	}
+type testEncodeDecoder struct{}
 
-	threads := 5
-	writesPerThread := 100
-	expectedBlocks := threads*writesPerThread + 1
-	done := make(chan bool)
-	for i := 0; i < threads; i++ {
-		go func(i int) {
-			log.Printf("writing on thread %d", i)
-			write(t, c, writesPerThread)
-			done <- true
-		}(i)
+func (ed *testEncodeDecoder) DecodeRecord(data []byte, record interface{}) error {
+	p, ok := record.(*string)
+	if !ok {
+		return errors.New("could not convert record to a string pointer")
 	}
-	for i := 0; i < threads; i++ {
-		<-done
+	*p = string(data)
+	return nil
+}
+
+func (ed *testEncodeDecoder) EncodeRecord(record interface{}) ([]byte, error) {
+	str, ok := record.(string)
+	if !ok {
+		return nil, errors.New("could not convert record to a string")
 	}
-	if len(c.Blocks) != expectedBlocks {
-		t.Fatalf("unexpected number of blocks: wanted %d, got %d", expectedBlocks, len(c.Blocks))
+	return []byte(str), nil
+}
+
+var _ storage.RecordStore = &testRecordStore{}
+
+type testRecordStore struct {
+	records map[storage.RecordID][]byte
+}
+
+func (s *testRecordStore) Delete(id storage.RecordID) error {
+	if s.records != nil && s.records[id] != nil {
+		delete(s.records, id)
 	}
+	return nil
+}
+
+func (s *testRecordStore) Read(id storage.RecordID) ([]byte, error) {
+	if s.records == nil || s.records[id] == nil {
+		return nil, errors.New("unknown record ID")
+	}
+	return s.records[id], nil
+}
+
+func (s *testRecordStore) Write(id storage.RecordID, data []byte) error {
+	if s.records == nil {
+		s.records = make(map[storage.RecordID][]byte)
+	}
+	s.records[id] = data
+	return nil
 }
