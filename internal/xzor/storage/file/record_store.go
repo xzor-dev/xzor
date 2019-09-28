@@ -46,3 +46,10 @@ func (s *RecordStore) Write(id storage.RecordID, data []byte) error {
 	}
 	return nil
 }
+
+// NewRecordStore creates a new file-based record store instance.
+func NewRecordStore(rootDir string) *RecordStore {
+	return &RecordStore{
+		RootDir: rootDir,
+	}
+}

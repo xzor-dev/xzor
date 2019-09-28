@@ -9,7 +9,7 @@ import (
 
 // Chain holds a set of blocks and enforces their ordering.
 type Chain struct {
-	Blocks   map[Hash]Index
+	Blocks   map[Hash]*Index
 	Branches map[BranchHash]*Branch
 	Hash     ChainHash
 	LastHash Hash
@@ -23,7 +23,7 @@ func (c *Chain) AddBlock(b *Block) error {
 	defer c.mux.Unlock()
 
 	if c.Blocks == nil {
-		c.Blocks = make(map[Hash]Index)
+		c.Blocks = make(map[Hash]*Index)
 	}
 
 	hash, err := NewHash(b)
@@ -38,7 +38,7 @@ func (c *Chain) AddBlock(b *Block) error {
 	}
 
 	if c.LastHash != "" {
-		lastIndex := c.Blocks[c.LastHash]
+		lastIndex := *c.Blocks[c.LastHash]
 
 		if b.PreviousHash != c.LastHash {
 			return ErrInvalidPrevHash
@@ -48,20 +48,25 @@ func (c *Chain) AddBlock(b *Block) error {
 		}
 	}
 
-	c.Blocks[b.Hash] = b.Index
+	c.Blocks[b.Hash] = &b.Index
 	c.LastHash = b.Hash
 
 	return nil
 }
 
+// HasBlock checks if the chain has the provided block hash.
+func (c *Chain) HasBlock(hash Hash) bool {
+	return c.Blocks != nil && c.Blocks[hash] != nil
+}
+
 // NewBlock creates a new block with all required properties pre-populated.
-func (c *Chain) NewBlock(data []byte) *Block {
+func (c *Chain) NewBlock(data interface{}) *Block {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
 	index := 0
 	if c.LastHash != "" {
-		lastIndex := c.Blocks[c.LastHash]
+		lastIndex := *c.Blocks[c.LastHash]
 		index = int(lastIndex) + 1
 	}
 
@@ -81,7 +86,7 @@ func (c *Chain) NewBranch(fromBlock *Block, toChain *Chain) (*Branch, error) {
 	if c.Blocks == nil {
 		return nil, ErrEmptyChain
 	}
-	if c.Blocks[fromBlock.Hash] == 0 {
+	if c.Blocks[fromBlock.Hash] == nil {
 		return nil, ErrInvalidHash
 	}
 
@@ -96,6 +101,19 @@ func (c *Chain) NewBranch(fromBlock *Block, toChain *Chain) (*Branch, error) {
 	}
 	c.Branches[hash] = branch
 	return branch, nil
+}
+
+// NewChain creates a new chain instance.
+func NewChain() (*Chain, error) {
+	hash, err := NewChainHash()
+	if err != nil {
+		return nil, err
+	}
+	return &Chain{
+		Blocks:   make(map[Hash]*Index),
+		Branches: make(map[BranchHash]*Branch),
+		Hash:     hash,
+	}, nil
 }
 
 // ChainHash is a unique string assigned to chains.

@@ -173,3 +173,10 @@ func (s *Service) Thread(hash ThreadHash) (*Thread, error) {
 	}
 	return thread, nil
 }
+
+// NewService creates a new messenger service.
+func NewService(storage *storage.Service) *Service {
+	return &Service{
+		Storage: storage,
+	}
+}

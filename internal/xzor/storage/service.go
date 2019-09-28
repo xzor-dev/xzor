@@ -37,3 +37,11 @@ func (s *Service) Write(id RecordID, record interface{}) error {
 	}
 	return s.Store.Write(id, data)
 }
+
+// NewService creates a new storage service.
+func NewService(encodeDecoder RecordEncodeDecoder, store RecordStore) *Service {
+	return &Service{
+		EncodeDecoder: encodeDecoder,
+		Store:         store,
+	}
+}

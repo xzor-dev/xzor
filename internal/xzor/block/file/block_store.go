@@ -64,3 +64,10 @@ func (s *BlockStore) Write(b *block.Block) error {
 	}
 	return nil
 }
+
+// NewBlockStore creates a new file-based block store instance.
+func NewBlockStore(rootDir string) *BlockStore {
+	return &BlockStore{
+		RootDir: rootDir,
+	}
+}

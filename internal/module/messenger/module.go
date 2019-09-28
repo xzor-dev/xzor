@@ -15,7 +15,7 @@ var _ module.Module = &Module{}
 // Module implements module.Module.
 type Module struct {
 	Commander *command.Commander
-	Service *Service
+	Service   *Service
 }
 
 // Command gets a messenger command by its name.
@@ -29,4 +29,12 @@ func (m *Module) Command(name command.Name) (command.Command, error) {
 // Name returns the name of the messenger module.
 func (m *Module) Name() module.Name {
 	return ModuleName
+}
+
+// NewModule creates a new messenger module instance.
+func NewModule(service *Service, commander *command.Commander) *Module {
+	return &Module{
+		Commander: commander,
+		Service:   service,
+	}
 }

@@ -1,12 +1,14 @@
 package block
 
 import (
+	"encoding/json"
+
 	"github.com/xzor-dev/xzor/internal/xzor/common"
 )
 
 // Block holds sequential data.
 type Block struct {
-	Data         []byte
+	Data         interface{}
 	Hash         Hash
 	Index        Index
 	PreviousHash Hash
@@ -18,16 +20,16 @@ type Hash string
 
 // NewHash generates a unique hash for a block.
 func NewHash(b *Block) (Hash, error) {
-	var bh Hash
-
-	record := string(b.Index) + string(b.Timestamp) + string(b.Data) + string(b.PreviousHash)
+	byteData, err := json.Marshal(b.Data)
+	if err != nil {
+		return "", err
+	}
+	record := string(b.Index) + string(b.Timestamp) + string(byteData) + string(b.PreviousHash)
 	hash, err := common.NewHash([]byte(record))
 	if err != nil {
-		return bh, err
+		return "", err
 	}
-	bh = Hash(hash)
-
-	return bh, nil
+	return Hash(hash), nil
 }
 
 // Index is used to order blocks within a chain.

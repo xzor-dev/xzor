@@ -13,7 +13,7 @@ type Service struct {
 	actions []*Action
 }
 
-// Clear removes any actions in the processor's memory.
+// Clear removes any actions in the service's memory.
 func (s *Service) Clear() {
 	s.actions = make([]*Action, 0)
 }
@@ -41,4 +41,15 @@ func (s *Service) Execute(a *Action) (*Response, error) {
 		Action: a,
 		Value:  res.Value,
 	}, nil
+}
+
+// NewService creates a new service instance with the provided modules.
+func NewService(modules []module.Module) *Service {
+	modMap := make(map[module.Name]module.Module)
+	for _, mod := range modules {
+		modMap[mod.Name()] = mod
+	}
+	return &Service{
+		Modules: modMap,
+	}
 }

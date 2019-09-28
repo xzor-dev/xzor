@@ -44,8 +44,11 @@ func TestService(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	srv := &block.Service{
+		BlockStore: &file.BlockStore{
+			RootDir: dir + "/testdata/blocks",
+		},
 		ChainStore: &file.ChainStore{
-			RootDir: dir + "/testdata",
+			RootDir: dir + "/testdata/chains",
 		},
 	}
 	c1, err := srv.NewChain()
@@ -62,7 +65,7 @@ func TestService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	c1A, err := srv.ReadChain(c1.Hash)
+	c1A, err := srv.Chain(c1.Hash)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -73,7 +76,7 @@ func TestService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	_, err = srv.ReadChain(c1.Hash)
+	_, err = srv.Chain(c1.Hash)
 	if err == nil {
 		t.Fatalf("expected an error when reading deleted chain")
 	}
@@ -85,8 +88,11 @@ func TestConcurrentWrites(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	s := &block.Service{
+		BlockStore: &file.BlockStore{
+			RootDir: dir + "/testdata/blocks",
+		},
 		ChainStore: &file.ChainStore{
-			RootDir: dir + "/testdata",
+			RootDir: dir + "/testdata/chains",
 		},
 	}
 	c, err := s.NewChain()
@@ -137,6 +143,7 @@ func TestConcurrentWrites(t *testing.T) {
 
 func TestBranchingChains(t *testing.T) {
 	s := &block.Service{
+		BlockStore: &memory.BlockStore{},
 		ChainStore: &memory.ChainStore{},
 	}
 	c1, err := s.NewChain()
@@ -156,5 +163,44 @@ func TestBranchingChains(t *testing.T) {
 
 	if c1.Branches[branch.Hash] == nil {
 		t.Fatalf("expected chain to have branch")
+	}
+}
+
+func TestDeleteChainAndBranches(t *testing.T) {
+	s := &block.Service{
+		BlockStore: &memory.BlockStore{},
+		ChainStore: &memory.ChainStore{},
+	}
+	c, err := s.NewChain()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	b, err := s.NewBlock(c, nil)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	err = s.Commit()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	_, err = s.Chain(c.Hash)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	_, err = s.Block(b.Hash)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	err = s.DeleteChain(c.Hash)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	_, err = s.Block(b.Hash)
+	if err == nil {
+		t.Fatal("expected an error when reading a deleted block")
+	}
+	_, err = s.Chain(c.Hash)
+	if err == nil {
+		t.Fatal("expected an error when reading a deleted chain")
 	}
 }

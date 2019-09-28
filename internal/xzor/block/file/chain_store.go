@@ -64,3 +64,10 @@ func (s *ChainStore) Write(c *block.Chain) error {
 	}
 	return nil
 }
+
+// NewChainStore creates a new file-based chain store instance.
+func NewChainStore(rootDir string) *ChainStore {
+	return &ChainStore{
+		RootDir: rootDir,
+	}
+}
