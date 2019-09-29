@@ -9,7 +9,10 @@ import (
 )
 
 func TestSimulator(t *testing.T) {
-	sim := simulator.New()
+	config := &simulator.Config{
+		NetworkSize: 2,
+	}
+	sim := simulator.New(config)
 	t.Run("Run Empty Jobs", func(t *testing.T) {
 		if _, err := sim.Run(nil); err != simulator.ErrNoJobs {
 			t.Fatalf("unexpected error: %v", err)
@@ -18,14 +21,17 @@ func TestSimulator(t *testing.T) {
 
 	jobA := &testJob{
 		config: &simulator.JobConfig{
-			NetworkSize: 2,
+			ExecutionCount: 2,
 		},
 		callback: func(p *simulator.JobParams) error {
 			return nil
 		},
 	}
 	t.Run("Run Single Job", func(t *testing.T) {
-		jobRes := sim.RunJob(jobA)
+		jobRes, err := sim.RunJob(jobA)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
 		if len(jobRes.Errors) > 0 {
 			t.Fatalf("job produced %d errors", len(jobRes.Errors))
 		}
@@ -35,9 +41,7 @@ func TestSimulator(t *testing.T) {
 	})
 
 	jobB := &testJob{
-		config: &simulator.JobConfig{
-			NetworkSize: 24,
-		},
+		config: &simulator.JobConfig{},
 		callback: func(p *simulator.JobParams) error {
 			time.Sleep(time.Millisecond)
 			return nil
@@ -54,9 +58,7 @@ func TestSimulator(t *testing.T) {
 	})
 
 	jobC := &testJob{
-		config: &simulator.JobConfig{
-			NetworkSize: 128,
-		},
+		config: &simulator.JobConfig{},
 		callback: func(p *simulator.JobParams) error {
 			sleepTime := time.Millisecond * time.Duration(p.ExecutionIndex)
 			time.Sleep(sleepTime)
@@ -64,7 +66,10 @@ func TestSimulator(t *testing.T) {
 		},
 	}
 	t.Run("Simulated Lag", func(t *testing.T) {
-		jobRes := sim.RunJob(jobC)
+		jobRes, err := sim.RunJob(jobC)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
 		if jobRes.Failed {
 			t.Fatalf("job failed with %d errors", len(jobRes.Errors))
 		}
