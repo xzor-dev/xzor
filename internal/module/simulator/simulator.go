@@ -2,12 +2,22 @@ package simulator
 
 // Config contains options for the simulator.
 type Config struct {
-	NetworkSize int
+	ConnectionsPerNode int
+	TotalNodes         int
 }
 
 // Simulator runs single or batches of jobs.
 type Simulator struct {
-	Config *Config
+	Config  *Config
+	Network *Network
+}
+
+// New creates a new simulator instance with the supplied config.
+func New(c *Config, n *Network) *Simulator {
+	return &Simulator{
+		Config:  c,
+		Network: n,
+	}
 }
 
 // Run multiple jobs and return a jobs result.
@@ -77,11 +87,4 @@ func (s *Simulator) RunJob(j Job) (*JobResult, error) {
 		}
 	}
 	return res, nil
-}
-
-// New creates a new simulator instance with the supplied config.
-func New(c *Config) *Simulator {
-	return &Simulator{
-		Config: c,
-	}
 }

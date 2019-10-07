@@ -12,7 +12,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sim := simulator.New(config.SimCofig)
+
+	n, err := simulator.NewNetwork(config.SimCofig, &simulator.NetworkWebBuilder{})
+	sim := simulator.New(config.SimCofig, n)
 	jobs, err := generateJobs(config)
 	if err != nil {
 		panic(err)
@@ -37,7 +39,8 @@ func loadConfig() (*Config, error) {
 			job.TestJobID: true,
 		},
 		SimCofig: &simulator.Config{
-			NetworkSize: 32,
+			TotalNodes:         32,
+			ConnectionsPerNode: 4,
 		},
 	}, nil
 }

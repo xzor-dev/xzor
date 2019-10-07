@@ -17,56 +17,30 @@ func (a *MockAddr) Network() string {
 
 // String returns the address as a string.
 func (a *MockAddr) String() string {
-	return ""
+	return "mock"
 }
 
-var _ Connection = &MockConnection{}
-
-// MockConnection implements Connection.
-type MockConnection struct {
-	Conn net.Conn
-}
-
-// Connect returns the net.Conn instance provided to the connection.
-func (c *MockConnection) Connect() (net.Conn, error) {
-	return c.Conn, nil
-}
-
-var _ DataHandler = &MockDataHandler{}
-
-// MockDataHandler implements DataHandler using a custom handler function.
-type MockDataHandler struct {
-	Handler func([]byte) error
-}
-
-// HandleData passes the data to the handler function.
-func (h *MockDataHandler) HandleData(data []byte) error {
-	if h.Handler == nil {
-		return errors.New("no handler function provided")
-	}
-	return h.Handler(data)
-}
-
-var _ Listener = &MockListener{}
 var _ net.Listener = &MockListener{}
 
 // MockListener implements both Listener and net.Listener.
 type MockListener struct {
-	Conn net.Conn
-
-	connChan chan net.Conn
+	Connections []net.Conn
 }
 
-// Accept returns the connection provided to the listener.
-// The connection is only returned once to prevent memory overflow.
+// Accept returns the next connection in the Connections slice.
 func (l *MockListener) Accept() (net.Conn, error) {
-	if l.connChan == nil {
-		l.connChan = make(chan net.Conn)
-		go func() {
-			l.connChan <- l.Conn
-		}()
+	if len(l.Connections) == 0 {
+		return nil, errors.New("no more connections")
 	}
-	return <-l.connChan, nil
+	next, conns := l.Connections[0], l.Connections[1:]
+	l.Connections = conns
+	return next, nil
+}
+
+// AddConnection adds a new net.Conn to the connection stack.
+// Connections are returned in the order they were added when calling Accept().
+func (l *MockListener) AddConnection(conn net.Conn) {
+	l.Connections = append(l.Connections, conn)
 }
 
 // Addr returns the net.Addr for the listener.

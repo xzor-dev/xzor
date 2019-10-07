@@ -2,142 +2,128 @@ package network
 
 import (
 	"bufio"
-	"errors"
+	"encoding/json"
 	"io"
-	"log"
 	"net"
-	"time"
+	"sync"
 )
 
-// Node controls all local operations.
+// Node handles sending messages to and receiving messages from nodes on the network.
 type Node struct {
-	DataHandler DataHandler
-	Errors      chan error
-
-	connections         []Connection
-	inboundConnections  []net.Conn
-	listeners           []Listener
-	outboundConnections []net.Conn
-	quit                chan bool
+	connections []net.Conn
+	id          int
+	listeners   []net.Listener
+	messageChan chan *Message
+	messages    map[MessageHash]*Message
+	mu          sync.Mutex
 }
 
 // AddConnection adds a new remote connection to the node.
-func (n *Node) AddConnection(conn Connection) {
-	if n.connections == nil {
-		n.connections = make([]Connection, 0)
-	}
+func (n *Node) AddConnection(conn net.Conn) {
 	n.connections = append(n.connections, conn)
 }
 
 // AddListener adds a new local listener.
-func (n *Node) AddListener(listener Listener) {
-	if n.listeners == nil {
-		n.listeners = make([]Listener, 0)
-	}
+func (n *Node) AddListener(listener net.Listener) {
 	n.listeners = append(n.listeners, listener)
+	go n.handleListener(listener)
 }
 
-// Start all components within the node.
-func (n *Node) Start() error {
-	log.Println("starting node")
+// Connections returns all external connections for the node.
+func (n *Node) Connections() []net.Conn {
+	return n.connections
+}
 
-	if n.DataHandler == nil {
-		return errors.New("no DataHandler provided to the node")
+// Read returns the last message recieved by any of the node's listeners.
+func (n *Node) Read() (*Message, error) {
+	return <-n.messageChan, nil
+}
+
+// Write sends a message to all registered connections.
+func (n *Node) Write(msg *Message) error {
+	if !n.addMessage(msg) {
+		return nil
 	}
 
-	n.Errors = make(chan error)
-	n.initConnections()
-	n.initListeners()
+	return n.write(msg)
+}
+
+func (n *Node) addMessage(msg *Message) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.messages == nil {
+		n.messages = make(map[MessageHash]*Message)
+	}
+	if n.messages[msg.Hash] == nil {
+		n.messages[msg.Hash] = msg
+		return true
+	}
+	return false
+}
+
+func (n *Node) handleIncomingData(data []byte) error {
+	msg := &Message{}
+	err := json.Unmarshal(data, msg)
+	if err != nil {
+		return err
+	}
+
+	if n.addMessage(msg) {
+		go func() {
+			n.messageChan <- msg
+		}()
+		return n.write(msg)
+	}
 
 	return nil
-}
-
-func (n *Node) handleData(data []byte) {
-	if string(data[0:4]) == "quit" {
-		log.Println("quitting")
-		n.quit <- true
-		return
-	}
-
-	err := n.DataHandler.HandleData(data)
-	if err != nil {
-		log.Printf("failed to handle data: %v", err)
-		n.Errors <- err
-		return
-	}
-
-	for _, conn := range n.outboundConnections {
-		go conn.Write(data)
-	}
-}
-
-func (n *Node) handleInboundConnection(conn net.Conn) {
-	n.inboundConnections = append(n.inboundConnections, conn)
-	buffer := bufio.NewReader(conn)
-	for {
-		log.Println("reading data from inbound connection")
-		data, err := buffer.ReadBytes('\n')
-		if err == io.EOF {
-			log.Printf("closing connection")
-			conn.Close()
-			return
-		}
-		if err != nil {
-			log.Printf("connection error: %v", err)
-			return
-		}
-		n.handleData(data[:len(data)-1])
-	}
 }
 
 func (n *Node) handleListener(l net.Listener) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			log.Printf("listener error: %v", err)
 			break
 		}
-		go n.handleInboundConnection(conn)
+		go n.handleListenerConnection(conn)
 	}
 }
 
-func (n *Node) handleOutboundConnection(conn net.Conn) {
-	n.outboundConnections = append(n.outboundConnections, conn)
-	//...
-}
-
-func (n *Node) initConnection(c Connection) {
+func (n *Node) handleListenerConnection(conn net.Conn) {
+	defer conn.Close()
+	buffer := bufio.NewReader(conn)
 	for {
-		conn, err := c.Connect()
-		if err != nil {
-			log.Printf("failed to connect to remote server: %v", err)
-			n.Errors <- err
-			time.Sleep(time.Second * 10)
-			continue
+		data, err := buffer.ReadBytes('\n')
+		if err == io.EOF {
+			return
 		}
-		go n.handleOutboundConnection(conn)
-		return
+		if err != nil {
+			return
+		}
+		n.handleIncomingData(data[:len(data)-1])
 	}
 }
 
-func (n *Node) initConnections() {
-	for _, c := range n.connections {
-		go n.initConnection(c)
-	}
-}
-
-func (n *Node) initListener(l Listener) {
-	listener, err := l.Listen()
+func (n *Node) write(msg *Message) error {
+	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("failed to start listener: %v", err)
-		n.Errors <- err
-		return
+		return err
 	}
-	go n.handleListener(listener)
+	data = append(data, '\n')
+	for _, conn := range n.connections {
+		go conn.Write(data)
+	}
+	return nil
 }
 
-func (n *Node) initListeners() {
-	for _, l := range n.listeners {
-		go n.initListener(l)
+var nodeID = 0
+
+// NewNode creates a new node instance.
+func NewNode() *Node {
+	id := nodeID
+	nodeID++
+	return &Node{
+		id:          id,
+		messageChan: make(chan *Message),
+		messages:    make(map[MessageHash]*Message),
 	}
 }

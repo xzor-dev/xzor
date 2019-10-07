@@ -20,12 +20,8 @@ func TestMessenger(t *testing.T) {
 	}
 	connA1, connA2 := net.Pipe()
 	instanceA.node.AddListener(&network.MockListener{
-		Conn: connA1,
+		Connections: []net.Conn{connA1},
 	})
-	err = instanceA.node.Start()
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
 
 	_, err = instanceA.Execute(&action.Action{
 		Module:    "messenger",
@@ -40,11 +36,5 @@ func TestMessenger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	instanceB.node.AddConnection(&network.MockConnection{
-		Conn: connA2,
-	})
-	err = instanceB.node.Start()
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
+	instanceB.node.AddConnection(connA2)
 }

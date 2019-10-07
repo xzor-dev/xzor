@@ -1,65 +1,114 @@
 package network_test
 
 import (
-	"log"
 	"net"
 	"testing"
 
 	"github.com/xzor-dev/xzor/internal/xzor/network"
 )
 
-func TestNetwork(t *testing.T) {
-	dataChan := make(chan []byte)
-	dataHandler := &network.MockDataHandler{
-		Handler: func(data []byte) error {
-			log.Println("handling data")
-			dataChan <- data
-			return nil
-		},
-	}
-	nodeA := &network.Node{
-		DataHandler: dataHandler,
+func TestBasicNetwork(t *testing.T) {
+	nodeA := network.NewNode()
+	nodeB := network.NewNode()
+	pipeA, pipeB := net.Pipe()
+	message, err := network.NewMessage("test")
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
 
-	connA1, connA2 := net.Pipe()
-	listenerA := &network.MockListener{
-		Conn: connA1,
-	}
-	nodeA.AddListener(listenerA)
-
-	connB1, connB2 := net.Pipe()
-	nodeA.AddConnection(&network.MockConnection{
-		Conn: connB1,
+	nodeA.AddConnection(pipeB)
+	nodeB.AddListener(&network.MockListener{
+		Connections: []net.Conn{pipeA},
 	})
 
-	err := nodeA.Start()
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
 	go func() {
-		err := <-nodeA.Errors
-		t.Fatalf("%v", err)
+		err := nodeA.Write(message)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
 	}()
 
-	msg := "hello"
-	msgBytes := append([]byte(msg), '\n')
-	_, err = connA2.Write(msgBytes)
+	messageB, err := nodeB.Read()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-
-	lastMsg := <-dataChan
-	if string(lastMsg) != msg {
-		t.Fatalf("unexpected message received: wanted %s, got %s", msg, lastMsg)
+	if messageB.Data != message.Data {
+		t.Fatalf("expected %s from nodeB, got %s", message.Data, messageB.Data)
 	}
+}
 
-	remoteMsg := make([]byte, len(msg))
-	_, err = connB2.Read(remoteMsg)
+func TestNetworkPropagation(t *testing.T) {
+	nodeA := network.NewNode()
+	nodeB := network.NewNode()
+	nodeC := network.NewNode()
+
+	pipeA1, pipeA2 := net.Pipe()
+	pipeB1, pipeB2 := net.Pipe()
+	pipeC1, pipeC2 := net.Pipe()
+
+	// create network loop:
+	// nodeA -> nodeB
+	// nodeB -> nodeC
+	// nodeC -> nodeA
+
+	nodeA.AddConnection(pipeB1)
+	nodeA.AddListener(&network.MockListener{
+		Connections: []net.Conn{pipeA2},
+	})
+
+	nodeB.AddConnection(pipeC1)
+	nodeB.AddListener(&network.MockListener{
+		Connections: []net.Conn{pipeB2},
+	})
+
+	nodeC.AddConnection(pipeA1)
+	nodeC.AddListener(&network.MockListener{
+		Connections: []net.Conn{pipeC2},
+	})
+
+	messageA, err := network.NewMessage("test")
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	if string(remoteMsg) != msg {
-		t.Fatalf("unexpected message received: wanted %s, got %s", msg, remoteMsg)
+	go func() {
+		err := nodeA.Write(messageA)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+	}()
+
+	nodeBMessage, err := nodeB.Read()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if nodeBMessage.Data != messageA.Data {
+		t.Fatalf("wanted %s from nodeB, got %s", messageA.Data, nodeBMessage.Data)
+	}
+
+	nodeCMessage, err := nodeC.Read()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if nodeCMessage.Data != messageA.Data {
+		t.Fatalf("wanted %s from nodeC, got %s", messageA.Data, nodeCMessage.Data)
+	}
+
+	messageB, err := network.NewMessage("test2")
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	go func() {
+		err := nodeC.Write(messageB)
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+	}()
+
+	nodeAMessage, err := nodeA.Read()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	if nodeAMessage.Data != messageB.Data {
+		t.Fatalf("expected %s from nodeA, got %s", messageB.Data, nodeAMessage.Data)
 	}
 }

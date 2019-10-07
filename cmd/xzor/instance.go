@@ -1,8 +1,6 @@
 package main
 
 import (
-	"errors"
-
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	messenger_command "github.com/xzor-dev/xzor/internal/module/messenger/command"
 	"github.com/xzor-dev/xzor/internal/xzor/action"
@@ -33,9 +31,7 @@ func newInstance(dataDir string) (*instance, error) {
 	})
 	return &instance{
 		actionService: actionService,
-		node: &network.Node{
-			DataHandler: newDataHandler(actionService),
-		},
+		node:          network.NewNode(),
 	}, nil
 }
 
@@ -47,20 +43,4 @@ func newMessengerModule(dataDir string) (*messenger.Module, error) {
 	commander := messenger_command.NewCommander(service)
 
 	return messenger.NewModule(service, commander), nil
-}
-
-var _ network.DataHandler = &dataHandler{}
-
-type dataHandler struct {
-	actionService *action.Service
-}
-
-func (h *dataHandler) HandleData(data []byte) error {
-	return errors.New("not implemented")
-}
-
-func newDataHandler(actionService *action.Service) *dataHandler {
-	return &dataHandler{
-		actionService: actionService,
-	}
 }
