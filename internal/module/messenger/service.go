@@ -88,7 +88,7 @@ func (s *Service) Message(hash MessageHash) (*Message, error) {
 
 // NewBoard creates a new board with the provided title.
 func (s *Service) NewBoard(title string) (*Board, error) {
-	hash, err := NewBoardHash()
+	hash, err := NewBoardHash(title)
 	if err != nil {
 		return nil, err
 	}

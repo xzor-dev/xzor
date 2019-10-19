@@ -1,6 +1,7 @@
 package network
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/xzor-dev/xzor/internal/xzor/common"
@@ -8,9 +9,9 @@ import (
 
 // Message holds data that is transported to and from nodes.
 type Message struct {
-	Data      interface{} `json:"data"`
-	Hash      MessageHash `json:"hash"`
-	Timestamp int64       `json:"timestamp"`
+	Data      interface{}
+	Hash      MessageHash
+	Timestamp int64
 }
 
 // NewMessage creates a new message instance with the supplied data.
@@ -27,6 +28,15 @@ func NewMessage(data interface{}) (*Message, error) {
 	return m, nil
 }
 
+// Encode converts the message to a JSON byte slice as an EncodedMessage.
+func (m *Message) Encode() (EncodedMessage, error) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return EncodedMessage(b), nil
+}
+
 // MessageHash is a unique string hash of a message.
 type MessageHash string
 
@@ -41,4 +51,20 @@ func NewMessageHash() (MessageHash, error) {
 		return "", err
 	}
 	return MessageHash(hash), nil
+}
+
+// EncodedMessage is a JSON encoded message that is sent to and recieved by network nodes.
+type EncodedMessage []byte
+
+// Decode converts the encoded message back into a message struct using
+// the supplied data interface as the decoded message's data property.
+func (d EncodedMessage) Decode(data interface{}) (*Message, error) {
+	msg := &Message{
+		Data: data,
+	}
+	err := json.Unmarshal(d, msg)
+	if err != nil {
+		return nil, err
+	}
+	return msg, nil
 }

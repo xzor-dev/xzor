@@ -2,20 +2,28 @@ package network
 
 import (
 	"bufio"
-	"encoding/json"
 	"io"
 	"net"
 	"sync"
+
+	"github.com/xzor-dev/xzor/internal/xzor/action"
 )
 
 // Node handles sending messages to and receiving messages from nodes on the network.
 type Node struct {
-	connections []net.Conn
-	id          int
-	listeners   []net.Listener
-	messageChan chan *Message
-	messages    map[MessageHash]*Message
-	mu          sync.Mutex
+	actionHandler action.Handler
+	connections   []net.Conn
+	listeners     []net.Listener
+	//messageChan   chan EncodedMessage
+	//messages      map[MessageHash]bool
+	mu sync.Mutex
+}
+
+// NewNode creates a new node instance.
+func NewNode(actionHandler action.Handler) *Node {
+	return &Node{
+		actionHandler: actionHandler,
+	}
 }
 
 // AddConnection adds a new remote connection to the node.
@@ -34,48 +42,27 @@ func (n *Node) Connections() []net.Conn {
 	return n.connections
 }
 
-// Read returns the last message recieved by any of the node's listeners.
-func (n *Node) Read() (*Message, error) {
-	return <-n.messageChan, nil
-}
-
-// Write sends a message to all registered connections.
-func (n *Node) Write(msg *Message) error {
-	if !n.addMessage(msg) {
-		return nil
-	}
-
-	return n.write(msg)
-}
-
-func (n *Node) addMessage(msg *Message) bool {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.messages == nil {
-		n.messages = make(map[MessageHash]*Message)
-	}
-	if n.messages[msg.Hash] == nil {
-		n.messages[msg.Hash] = msg
-		return true
-	}
-	return false
-}
-
-func (n *Node) handleIncomingData(data []byte) error {
-	msg := &Message{}
-	err := json.Unmarshal(data, msg)
+// Write sends an action to all registered connections.
+func (n *Node) Write(a *action.Action) error {
+	data, err := a.Encode()
 	if err != nil {
 		return err
 	}
 
-	if n.addMessage(msg) {
-		go func() {
-			n.messageChan <- msg
-		}()
-		return n.write(msg)
+	return n.write(a.Hash, data)
+}
+
+func (n *Node) handleIncomingData(data action.EncodedAction) error {
+	a, err := data.Decode()
+	if err != nil {
+		return err
 	}
 
-	return nil
+	err = n.actionHandler.HandleAction(a)
+	if err != nil {
+		return err
+	}
+	return n.write(a.Hash, data)
 }
 
 func (n *Node) handleListener(l net.Listener) {
@@ -99,31 +86,15 @@ func (n *Node) handleListenerConnection(conn net.Conn) {
 		if err != nil {
 			return
 		}
-		n.handleIncomingData(data[:len(data)-1])
+		encodedAction := action.EncodedAction(data[:len(data)-1])
+		n.handleIncomingData(encodedAction)
 	}
 }
 
-func (n *Node) write(msg *Message) error {
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
+func (n *Node) write(hash action.Hash, encodedAction action.EncodedAction) error {
+	data := append(encodedAction, '\n')
 	for _, conn := range n.connections {
 		go conn.Write(data)
 	}
 	return nil
-}
-
-var nodeID = 0
-
-// NewNode creates a new node instance.
-func NewNode() *Node {
-	id := nodeID
-	nodeID++
-	return &Node{
-		id:          id,
-		messageChan: make(chan *Message),
-		messages:    make(map[MessageHash]*Message),
-	}
 }

@@ -1,6 +1,6 @@
 package job
 
-import "github.com/xzor-dev/xzor/internal/module/simulator"
+import "github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 
 type ID string
 

@@ -16,6 +16,20 @@ var _ module.Module = &Module{}
 type Module struct {
 	Commander *command.Commander
 	Service   *Service
+
+	resourceGetters map[module.ResourceName]module.ResourceGetter
+}
+
+// NewModule creates a new messenger module instance.
+func NewModule(service *Service, commander *command.Commander) *Module {
+	return &Module{
+		Commander: commander,
+		Service:   service,
+
+		resourceGetters: map[module.ResourceName]module.ResourceGetter{
+			BoardResourceName: &BoardResourceGetter{service},
+		},
+	}
 }
 
 // Command gets a messenger command by its name.
@@ -31,10 +45,7 @@ func (m *Module) Name() module.Name {
 	return ModuleName
 }
 
-// NewModule creates a new messenger module instance.
-func NewModule(service *Service, commander *command.Commander) *Module {
-	return &Module{
-		Commander: commander,
-		Service:   service,
-	}
+// Resources returns a map of all resource getters for the module.
+func (m *Module) Resources() map[module.ResourceName]module.ResourceGetter {
+	return m.resourceGetters
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/xzor-dev/xzor/internal/module/simulator"
+	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 	"github.com/xzor-dev/xzor/internal/xzor/network"
 )
 

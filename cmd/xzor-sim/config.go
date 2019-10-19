@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/job"
-	"github.com/xzor-dev/xzor/internal/module/simulator"
+	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 )
 
 // Config contains options for the simulator executable.

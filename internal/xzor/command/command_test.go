@@ -10,8 +10,9 @@ func TestCommands(t *testing.T) {
 	commander := &command.Commander{}
 	c := &testCommand{
 		name: "reverse",
-		callback: func(args []interface{}) ([]byte, error) {
-			data := args[0].([]byte)
+		callback: func(params map[string]interface{}) ([]byte, error) {
+			value := params["value"].(string)
+			data := []byte(value)
 			res := make([]byte, len(data))
 			for i, d := range data {
 				j := len(data) - 1 - i
@@ -24,9 +25,10 @@ func TestCommands(t *testing.T) {
 
 	testStr := "hello"
 	expected := "olleh"
-	args := make([]interface{}, 1)
-	args[0] = []byte(testStr)
-	res, err := commander.Execute("reverse", args)
+	params := map[string]interface{}{
+		"value": testStr,
+	}
+	res, err := commander.Execute("reverse", params)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -43,11 +45,11 @@ var _ command.Command = &testCommand{}
 
 type testCommand struct {
 	name     command.Name
-	callback func([]interface{}) ([]byte, error)
+	callback func(map[string]interface{}) ([]byte, error)
 }
 
-func (c *testCommand) Execute(args []interface{}) (*command.Response, error) {
-	res, err := c.callback(args)
+func (c *testCommand) Execute(params map[string]interface{}) (*command.Response, error) {
+	res, err := c.callback(params)
 	if err != nil {
 		return nil, err
 	}

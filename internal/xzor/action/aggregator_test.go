@@ -25,9 +25,11 @@ func TestAggregator(t *testing.T) {
 
 	ag := action.NewAggregator(blockService, chain)
 	ag.Push(&action.Action{
-		Module:    "test-module",
-		Command:   "test-command",
-		Arguments: []interface{}{"foo"},
+		Module:  "test-module",
+		Command: "test-command",
+		Parameters: map[string]interface{}{
+			"test": "foo",
+		},
 	})
 	block, err := ag.GenerateBlock()
 	if err != nil {

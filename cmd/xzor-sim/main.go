@@ -1,11 +1,26 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/job"
-	"github.com/xzor-dev/xzor/internal/module/simulator"
+	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 )
+
+var _ simulator.Job = &actionJob{}
+
+type actionJob struct{}
+
+func (j *actionJob) Config() *simulator.JobConfig {
+	return &simulator.JobConfig{}
+}
+
+func (j *actionJob) Execute(p *simulator.JobParams) error {
+	return nil
+}
 
 func main() {
 	config, err := loadConfig()
@@ -15,21 +30,42 @@ func main() {
 
 	n, err := simulator.NewNetwork(config.SimCofig, &simulator.NetworkWebBuilder{})
 	sim := simulator.New(config.SimCofig, n)
-	jobs, err := generateJobs(config)
-	if err != nil {
-		panic(err)
-	}
-	res, err := sim.Run(jobs)
-	if err != nil {
-		panic(err)
-	}
+	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("simulation finished")
-	fmt.Printf("Total Jobs Executed .... %d\n", res.TotalExecuted)
-	fmt.Printf("Total Jobs Completed ... %d\n", res.TotalCompleted)
-	fmt.Printf("Total Job Failures ..... %d\n", res.TotalFailed)
-	for i, jRes := range res.Jobs {
-		fmt.Printf("\tJob #%d -- Executions: %d, Errors: %d, Failed: %v\n", i, jRes.TotalExecutions, len(jRes.Errors), jRes.Failed)
+	fmt.Printf("simulator started with %d nodes\n", config.SimCofig.TotalNodes)
+
+	for {
+		fmt.Print("\n> ")
+		cmd, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Printf("error: %v", err)
+			continue
+		}
+		cmd = strings.Replace(cmd, "\n", "", -1)
+		cmdParts := strings.Split(cmd, " ")
+		if len(cmdParts) < 2 {
+			fmt.Println("expecting at least 2 arguments")
+			fmt.Println("usage: module action [param1, [param2, ...]]")
+			continue
+		}
+
+		moduleName := cmdParts[0]
+		actionName := cmdParts[1]
+		params := cmdParts[2:]
+
+		fmt.Printf("got command: %s.%s %s\n", moduleName, actionName, strings.Join(params, ", "))
+
+		job := &actionJob{}
+		res, err := sim.RunJob(job)
+		if err != nil {
+			fmt.Printf("job failed: %v\n", err)
+			continue
+		}
+
+		fmt.Println("job result:")
+		fmt.Printf("\texecutions: %d\n", res.TotalExecutions)
+		fmt.Printf("\terrors: %d\n", len(res.Errors))
+		fmt.Printf("\tfailed: %v\n", res.Failed)
 	}
 }
 
