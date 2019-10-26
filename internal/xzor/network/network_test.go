@@ -9,11 +9,8 @@ import (
 )
 
 func TestBasicNetwork(t *testing.T) {
-	handlerA := newTestActionHandler()
-	nodeA := network.NewNode(handlerA)
-
-	handlerB := newTestActionHandler()
-	nodeB := network.NewNode(handlerB)
+	nodeA := network.NewNode()
+	nodeB := network.NewNode()
 
 	pipeA, pipeB := net.Pipe()
 	a, err := action.New("test-mod", "test-cmd", nil)
@@ -33,13 +30,15 @@ func TestBasicNetwork(t *testing.T) {
 		}
 	}()
 
-	actionB := <-handlerB.actions
+	actionB, err := nodeB.Read()
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
 	if actionB.Hash != a.Hash {
 		t.Fatalf("mismatched action hashes: wanted %s, got %s", a.Hash, actionB.Hash)
 	}
 }
 
-/*
 func TestNetworkPropagation(t *testing.T) {
 	nodeA := network.NewNode()
 	nodeB := network.NewNode()
@@ -69,65 +68,52 @@ func TestNetworkPropagation(t *testing.T) {
 		Connections: []net.Conn{pipeC2},
 	})
 
-	messageA, err := network.NewMessage("test")
+	actionA, err := action.New("test-mod", "test-cmd", nil)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 	go func() {
-		err := nodeA.Write(messageA)
+		err := nodeA.Write(actionA)
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
 	}()
 
-	nodeBData, err := nodeB.Read()
+	nodeBAction, err := nodeB.Read()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	nodeBMessage, err := nodeBData.Decode(nil)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if nodeBMessage.Data != messageA.Data {
-		t.Fatalf("wanted %s from nodeB, got %s", messageA.Data, nodeBMessage.Data)
+	if nodeBAction.Hash != actionA.Hash {
+		t.Fatalf("wanted action %s from nodeB, got %s", actionA.Hash, nodeBAction.Hash)
 	}
 
-	nodeCData, err := nodeC.Read()
+	nodeCAction, err := nodeC.Read()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	nodeCMessage, err := nodeCData.Decode(nil)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if nodeCMessage.Data != messageA.Data {
-		t.Fatalf("wanted %s from nodeC, got %s", messageA.Data, nodeCMessage.Data)
+	if nodeCAction.Hash != actionA.Hash {
+		t.Fatalf("wanted action %s from nodeC, got %s", actionA.Hash, nodeCAction.Hash)
 	}
 
-	messageB, err := network.NewMessage("test2")
+	actionB, err := action.New("test-mod", "test-cmd2", nil)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 	go func() {
-		err := nodeC.Write(messageB)
+		err := nodeC.Write(actionB)
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
 	}()
 
-	nodeAData, err := nodeA.Read()
+	nodeAAction, err := nodeA.Read()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	nodeAMessage, err := nodeAData.Decode(nil)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if nodeAMessage.Data != messageB.Data {
-		t.Fatalf("expected %s from nodeA, got %s", messageB.Data, nodeAMessage.Data)
+	if nodeAAction.Hash != actionB.Hash {
+		t.Fatalf("expected action %s from nodeA, got %s", actionB.Hash, nodeAAction.Hash)
 	}
 }
-*/
 
 var _ action.Handler = &testActionHandler{}
 

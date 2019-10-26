@@ -11,18 +11,18 @@ import (
 
 // Node handles sending messages to and receiving messages from nodes on the network.
 type Node struct {
-	actionHandler action.Handler
-	connections   []net.Conn
-	listeners     []net.Listener
-	//messageChan   chan EncodedMessage
-	//messages      map[MessageHash]bool
-	mu sync.Mutex
+	actionChan  chan *action.Action
+	actionMap   map[action.Hash]bool
+	connections []net.Conn
+	listeners   []net.Listener
+	mu          sync.Mutex
 }
 
 // NewNode creates a new node instance.
-func NewNode(actionHandler action.Handler) *Node {
+func NewNode() *Node {
 	return &Node{
-		actionHandler: actionHandler,
+		actionChan: make(chan *action.Action),
+		actionMap:  make(map[action.Hash]bool),
 	}
 }
 
@@ -42,8 +42,16 @@ func (n *Node) Connections() []net.Conn {
 	return n.connections
 }
 
+// Read returns actions as they are recieved by the node.
+func (n *Node) Read() (*action.Action, error) {
+	return <-n.actionChan, nil
+}
+
 // Write sends an action to all registered connections.
 func (n *Node) Write(a *action.Action) error {
+	if n.actionMap[a.Hash] {
+		return action.ErrDuplicateAction
+	}
 	data, err := a.Encode()
 	if err != nil {
 		return err
@@ -57,11 +65,12 @@ func (n *Node) handleIncomingData(data action.EncodedAction) error {
 	if err != nil {
 		return err
 	}
-
-	err = n.actionHandler.HandleAction(a)
-	if err != nil {
-		return err
+	if n.actionMap[a.Hash] {
+		return action.ErrDuplicateAction
 	}
+	go func() {
+		n.actionChan <- a
+	}()
 	return n.write(a.Hash, data)
 }
 
@@ -92,6 +101,10 @@ func (n *Node) handleListenerConnection(conn net.Conn) {
 }
 
 func (n *Node) write(hash action.Hash, encodedAction action.EncodedAction) error {
+	n.mu.Lock()
+	n.actionMap[hash] = true
+	n.mu.Unlock()
+
 	data := append(encodedAction, '\n')
 	for _, conn := range n.connections {
 		go conn.Write(data)
