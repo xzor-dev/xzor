@@ -1,6 +1,7 @@
 package instance_test
 
 import (
+	"log"
 	"net"
 	"os"
 	"testing"
@@ -8,9 +9,10 @@ import (
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	messenger_command "github.com/xzor-dev/xzor/internal/module/messenger/command"
 	"github.com/xzor-dev/xzor/internal/xzor/action"
+	"github.com/xzor-dev/xzor/internal/xzor/command"
 	"github.com/xzor-dev/xzor/internal/xzor/instance"
-	"github.com/xzor-dev/xzor/internal/xzor/module"
 	"github.com/xzor-dev/xzor/internal/xzor/network"
+	"github.com/xzor-dev/xzor/internal/xzor/resource"
 	"github.com/xzor-dev/xzor/internal/xzor/storage"
 	storage_file "github.com/xzor-dev/xzor/internal/xzor/storage/file"
 	storage_json "github.com/xzor-dev/xzor/internal/xzor/storage/json"
@@ -22,22 +24,19 @@ func TestInstance(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
+	instanceA, _, nodeA := newTestSetup(t, dir+"/testdata/instanceA")
+	instanceB, executorB, nodeB := newTestSetup(t, dir+"/testdata/instanceB")
 	connA, connB := net.Pipe()
-	nodeA := network.NewNode()
+
 	nodeA.AddConnection(connA)
-	nodeB := network.NewNode()
 	nodeB.AddListener(&network.MockListener{
 		Connections: []net.Conn{connB},
 	})
 
-	iA := newInstance(t, nodeA, dir+"/testdata/instanceA")
-	iB := newInstance(t, nodeB, dir+"/testdata/instanceB")
-
-	resA1, err := iA.ExecuteAction(&action.Action{
-		Module:    messenger.ModuleName,
-		Command:   messenger_command.CreateBoardName,
-		Arguments: []interface{}{"My Board"},
+	actionA, err := action.New(messenger.ModuleName, messenger_command.CreateBoardName, command.Params{
+		"title": "My Board",
 	})
+	resA1, err := instanceA.ExecuteAction(actionA)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -47,7 +46,7 @@ func TestInstance(t *testing.T) {
 		t.Fatalf("could not convert response value to board")
 	}
 
-	resourceA1, err := iA.Resource(messenger.ModuleName, boardA1.ResourceName(), boardA1.ResourceID())
+	resourceA1, err := instanceA.Resource(messenger.ModuleName, boardA1.ResourceName(), boardA1.ResourceID())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -59,7 +58,9 @@ func TestInstance(t *testing.T) {
 		t.Fatalf("expected board title to be %s, got %s", boardA1.Title, boardA2.Title)
 	}
 
-	resourceB1, err := iB.Resource(messenger.ModuleName, boardA1.ResourceName(), boardA1.ResourceID())
+	<-executorB.responseChan
+
+	resourceB1, err := instanceB.Resource(messenger.ModuleName, boardA1.ResourceName(), boardA1.ResourceID())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -78,16 +79,19 @@ func TestInstance(t *testing.T) {
 	}
 }
 
-func newInstance(t *testing.T, node *network.Node, rootDir string) *instance.Instance {
+func newTestSetup(t *testing.T, rootDir string) (*instance.Instance, *actionExecutor, *network.Node) {
 	msgMod := newMessengerModule(t, rootDir)
-	modules := []module.Module{msgMod}
-
-	i := instance.New(modules, node)
-	err := i.Start()
+	node := network.NewNode()
+	actionService := action.NewService([]command.Provider{msgMod})
+	actionExecutor := newActionExecutor(actionService)
+	resourceService := resource.NewService([]resource.Provider{msgMod})
+	inst := instance.New(actionExecutor, node, resourceService)
+	err := inst.Start()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	return i
+
+	return inst, actionExecutor, node
 }
 
 func newMessengerModule(t *testing.T, rootDir string) *messenger.Module {
@@ -95,7 +99,33 @@ func newMessengerModule(t *testing.T, rootDir string) *messenger.Module {
 	fileStore := storage_file.NewRecordStore(rootDir + "/messenger")
 	store := storage.NewService(storeED, fileStore)
 	srv := messenger.NewService(store)
-	cmdr := messenger_command.NewCommander(srv)
+	commands := messenger_command.Commands(srv)
 
-	return messenger.NewModule(srv, cmdr)
+	return messenger.NewModule(srv, commands)
+}
+
+var _ action.Executor = &actionExecutor{}
+
+type actionExecutor struct {
+	actionService *action.Service
+	responseChan  chan *action.Response
+}
+
+func newActionExecutor(actionService *action.Service) *actionExecutor {
+	return &actionExecutor{
+		actionService: actionService,
+		responseChan:  make(chan *action.Response),
+	}
+}
+
+func (e *actionExecutor) ExecuteAction(a *action.Action) (*action.Response, error) {
+	res, err := e.actionService.ExecuteAction(a)
+	if err != nil {
+		log.Printf("got error from executing action: %v", err)
+		return nil, err
+	}
+	go func() {
+		e.responseChan <- res
+	}()
+	return res, nil
 }

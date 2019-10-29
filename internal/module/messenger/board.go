@@ -2,13 +2,13 @@ package messenger
 
 import (
 	"github.com/xzor-dev/xzor/internal/xzor/common"
-	"github.com/xzor-dev/xzor/internal/xzor/module"
+	"github.com/xzor-dev/xzor/internal/xzor/resource"
 )
 
 // BoardResourceName is the name of the Board resource.
 const BoardResourceName = "board"
 
-var _ module.Resource = &Board{}
+var _ resource.Resource = &Board{}
 
 // Board holds threads.
 type Board struct {
@@ -48,13 +48,13 @@ func (b *Board) NewThread(title string) (*Thread, error) {
 }
 
 // ResourceName returns the resource name of the board.
-func (b *Board) ResourceName() module.ResourceName {
+func (b *Board) ResourceName() resource.Name {
 	return BoardResourceName
 }
 
 // ResourceID returns the board's hash as a ResourceID.
-func (b *Board) ResourceID() module.ResourceID {
-	return module.ResourceID(b.Hash)
+func (b *Board) ResourceID() resource.ID {
+	return resource.ID(b.Hash)
 }
 
 // BoardHash is a unique string assigned to newly created boards.
@@ -70,7 +70,7 @@ func NewBoardHash(title string) (BoardHash, error) {
 	return BoardHash(hash), nil
 }
 
-var _ module.ResourceGetter = &BoardResourceGetter{}
+var _ resource.Getter = &BoardResourceGetter{}
 
 // BoardResourceGetter handles the retrieval of individual boards.
 type BoardResourceGetter struct {
@@ -85,6 +85,6 @@ func NewBoardResourceGetter(s *Service) *BoardResourceGetter {
 }
 
 // Resource returns a board with the hash of the id supplied.
-func (g *BoardResourceGetter) Resource(id module.ResourceID) (module.Resource, error) {
+func (g *BoardResourceGetter) Resource(id resource.ID) (resource.Resource, error) {
 	return g.service.Board(BoardHash(id))
 }

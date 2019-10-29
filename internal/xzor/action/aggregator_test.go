@@ -25,8 +25,8 @@ func TestAggregator(t *testing.T) {
 
 	ag := action.NewAggregator(blockService, chain)
 	ag.Push(&action.Action{
-		Module:  "test-module",
-		Command: "test-command",
+		Command:         "test-command",
+		CommandProvider: "test-module",
 		Parameters: map[string]interface{}{
 			"test": "foo",
 		},

@@ -1,12 +1,12 @@
 package action_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/xzor-dev/xzor/internal/xzor/action"
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 	"github.com/xzor-dev/xzor/internal/xzor/module"
+	"github.com/xzor-dev/xzor/internal/xzor/resource"
 )
 
 func TestIncomingAction(t *testing.T) {
@@ -22,16 +22,19 @@ func TestIncomingAction(t *testing.T) {
 			commandName: c,
 		},
 	}
-	as := action.NewService([]module.Module{m})
+	providers := map[command.ProviderName]command.Provider{
+		command.ProviderName(moduleName): m,
+	}
+	as := action.NewService(providers)
 	a := &action.Action{
-		Command: commandName,
-		Module:  moduleName,
+		Command:         commandName,
+		CommandProvider: command.ProviderName(moduleName),
 		Parameters: map[string]interface{}{
 			"foo": "bar",
 			"bar": "baz",
 		},
 	}
-	_, err := as.Execute(a)
+	_, err := as.ExecuteAction(a)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -43,17 +46,20 @@ func TestIncomingAction(t *testing.T) {
 func TestDuplicateActionIgnore(t *testing.T) {
 	cmd := newTestCommand("test-cmd")
 	mod := newTestModule("test-mod", []command.Command{cmd})
-	a, err := action.New(mod.Name(), cmd.Name(), map[string]interface{}{"foo": "bar"})
+	a, err := action.New(command.ProviderName(mod.Name()), cmd.Name(), map[string]interface{}{"foo": "bar"})
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	s := action.NewService([]module.Module{mod})
+	providers := map[command.ProviderName]command.Provider{
+		"test-mod": mod,
+	}
+	s := action.NewService(providers)
 
-	_, err = s.Execute(a)
+	_, err = s.ExecuteAction(a)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	_, err = s.Execute(a)
+	_, err = s.ExecuteAction(a)
 	if err != action.ErrDuplicateAction {
 		t.Fatalf("expected a duplicate action error, got %v", err)
 	}
@@ -84,6 +90,7 @@ func (c *testCommand) Name() command.Name {
 }
 
 var _ module.Module = &testModule{}
+var _ command.Provider = &testModule{}
 
 type testModule struct {
 	commands map[command.Name]command.Command
@@ -101,17 +108,14 @@ func newTestModule(name module.Name, commands []command.Command) *testModule {
 	return mod
 }
 
-func (m *testModule) Command(name command.Name) (command.Command, error) {
-	if m.commands == nil || m.commands[name] == nil {
-		return nil, errors.New("invalid command name")
-	}
-	return m.commands[name], nil
+func (m *testModule) Commands() map[command.Name]command.Command {
+	return m.commands
 }
 
 func (m *testModule) Name() module.Name {
 	return m.name
 }
 
-func (m *testModule) Resources() map[module.ResourceName]module.ResourceGetter {
-	return make(map[module.ResourceName]module.ResourceGetter)
+func (m *testModule) Resources() map[resource.Name]resource.Getter {
+	return make(map[resource.Name]resource.Getter)
 }

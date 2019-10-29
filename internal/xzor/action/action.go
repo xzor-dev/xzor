@@ -6,31 +6,30 @@ import (
 
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 	"github.com/xzor-dev/xzor/internal/xzor/common"
-	"github.com/xzor-dev/xzor/internal/xzor/module"
 )
 
 // Action contains a single command along with any arguments.
 type Action struct {
-	Command    command.Name
-	Hash       Hash
-	Module     module.Name
-	Parameters map[string]interface{}
-	Timestamp  int64
+	Command         command.Name
+	CommandProvider command.ProviderName
+	Hash            Hash
+	Parameters      map[string]interface{}
+	Timestamp       int64
 }
 
 // New generates a new action.
-func New(mod module.Name, cmd command.Name, params map[string]interface{}) (*Action, error) {
+func New(providerName command.ProviderName, cmd command.Name, params map[string]interface{}) (*Action, error) {
 	t := time.Now()
-	hash, err := NewHash(mod, cmd, params, t)
+	hash, err := NewHash(providerName, cmd, params, t)
 	if err != nil {
 		return nil, err
 	}
 	return &Action{
-		Command:    cmd,
-		Hash:       hash,
-		Module:     mod,
-		Parameters: params,
-		Timestamp:  t.Unix(),
+		Command:         cmd,
+		CommandProvider: providerName,
+		Hash:            hash,
+		Parameters:      params,
+		Timestamp:       t.Unix(),
 	}, nil
 }
 
@@ -47,12 +46,12 @@ func (a *Action) Encode() (EncodedAction, error) {
 type Hash string
 
 // NewHash generates a new hash used for an action.
-func NewHash(mod module.Name, cmd command.Name, params map[string]interface{}, t time.Time) (Hash, error) {
+func NewHash(providerName command.ProviderName, cmd command.Name, params map[string]interface{}, t time.Time) (Hash, error) {
 	pb, err := json.Marshal(params)
 	if err != nil {
 		return "", err
 	}
-	hs := string(mod) + string(cmd) + string(pb) + string(t.Unix())
+	hs := string(providerName) + string(cmd) + string(pb) + string(t.Unix())
 	hb := []byte(hs)
 	hash, err := common.NewHash(hb)
 	if err != nil {
@@ -71,28 +70,10 @@ func (en EncodedAction) Decode() (*Action, error) {
 	return a, err
 }
 
-// Handler is used to handle actions.
-type Handler interface {
-	HandleAction(*Action) error
+// Executor is used to execute actions and return an action response.
+type Executor interface {
+	ExecuteAction(*Action) (*Response, error)
 }
-
-/*
-// Decoder converts a byte slice to an action.
-type Decoder interface {
-	DecodeAction([]byte) (*Action, error)
-}
-
-// Encoder converts an action into a byte slice.
-type Encoder interface {
-	EncodeAction(*Action) ([]byte, error)
-}
-
-// EncodeDecoder combines the Decoder and Encoder interfaces.
-type EncodeDecoder interface {
-	Decoder
-	Encoder
-}
-*/
 
 // Response is populated and returned from executing actions.
 type Response struct {

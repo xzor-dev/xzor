@@ -2,7 +2,6 @@ package network
 
 import (
 	"bufio"
-	"io"
 	"net"
 	"sync"
 
@@ -89,9 +88,6 @@ func (n *Node) handleListenerConnection(conn net.Conn) {
 	buffer := bufio.NewReader(conn)
 	for {
 		data, err := buffer.ReadBytes('\n')
-		if err == io.EOF {
-			return
-		}
 		if err != nil {
 			return
 		}

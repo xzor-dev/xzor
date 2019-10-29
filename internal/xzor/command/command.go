@@ -4,7 +4,7 @@ import "errors"
 
 // Command is used for executing single commands.
 type Command interface {
-	Execute(map[string]interface{}) (*Response, error)
+	Execute(Params) (*Response, error)
 	Name() Name
 }
 
@@ -23,7 +23,7 @@ func NewCommander(commands []Command) *Commander {
 }
 
 // Execute executes a command by its name along with the provided arguments.
-func (c *Commander) Execute(name Name, params map[string]interface{}) (*Response, error) {
+func (c *Commander) Execute(name Name, params Params) (*Response, error) {
 	if c.commands == nil || c.commands[name] == nil {
 		return nil, errors.New("invalid command name")
 	}
@@ -46,8 +46,29 @@ func (c *Commander) Register(cmd Command) {
 	c.commands[cmd.Name()] = cmd
 }
 
+// Map maps command names to commands.
+type Map map[Name]Command
+
+// NewMap creates a new command map from a slice of commands.
+func NewMap(commands []Command) Map {
+	cm := make(Map)
+	for _, c := range commands {
+		cm[c.Name()] = c
+	}
+	return cm
+}
+
 // Name is a string name of a command.
 type Name string
+
+// Provider providers a map of commands by their name.
+type Provider interface {
+	Commands() Map
+	CommandProviderName() ProviderName
+}
+
+// ProviderName is a string used to identify a command provider.
+type ProviderName string
 
 // Response is populated and returned from executed commands.
 type Response struct {

@@ -5,9 +5,9 @@ import (
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
 
-// NewCommander creates a new Commander instance populated with messenger commands.
-func NewCommander(s *messenger.Service) *command.Commander {
-	return command.NewCommander([]command.Command{
+// Commands creates a slice of available commands for the messenger module.
+func Commands(s *messenger.Service) []command.Command {
+	return []command.Command{
 		&CreateBoard{
 			Service: s,
 		},
@@ -17,5 +17,5 @@ func NewCommander(s *messenger.Service) *command.Commander {
 		&CreateThread{
 			Service: s,
 		},
-	})
+	}
 }

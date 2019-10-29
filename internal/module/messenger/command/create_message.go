@@ -1,8 +1,6 @@
 package command
 
 import (
-	"errors"
-
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
@@ -17,22 +15,17 @@ type CreateMessage struct {
 	Service *messenger.Service
 }
 
-// Execute runs the command with the provided arguments to create a new message.
-func (cm *CreateMessage) Execute(args []interface{}) (*command.Response, error) {
-	if len(args) < 2 {
-		return nil, errors.New("command requires at 2 arguments")
+// Execute runs the command with the provided parameters to create a new message.
+func (cm *CreateMessage) Execute(params command.Params) (*command.Response, error) {
+	threadHash, err := params.String("thread")
+	if err != nil {
+		return nil, err
 	}
-
-	threadHash, ok := args[0].(messenger.ThreadHash)
-	if !ok {
-		return nil, errors.New("could not convert argument to ThreadHash")
+	body, err := params.String("body")
+	if err != nil {
+		return nil, err
 	}
-	body, ok := args[1].(string)
-	if !ok {
-		return nil, errors.New("could not convert argument to string")
-	}
-
-	message, err := cm.Service.NewMessage(threadHash, body)
+	message, err := cm.Service.NewMessage(messenger.ThreadHash(threadHash), body)
 	if err != nil {
 		return nil, err
 	}

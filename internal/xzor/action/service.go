@@ -3,26 +3,24 @@ package action
 import (
 	"errors"
 
-	"github.com/xzor-dev/xzor/internal/xzor/module"
+	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
 
 // Service handles the execution and processing of actions.
 type Service struct {
-	Modules map[module.Name]module.Module
-
-	actions map[Hash]*Action
+	actions          map[Hash]*Action
+	commandProviders map[command.ProviderName]command.Provider
 }
 
 // NewService creates a new service instance with the provided modules.
-func NewService(modules []module.Module) *Service {
-	modMap := make(map[module.Name]module.Module)
-	for _, mod := range modules {
-		modMap[mod.Name()] = mod
+func NewService(commandProviders []command.Provider) *Service {
+	cpMap := make(map[command.ProviderName]command.Provider)
+	for _, cp := range commandProviders {
+		cpMap[cp.CommandProviderName()] = cp
 	}
 	return &Service{
-		Modules: modMap,
-
-		actions: make(map[Hash]*Action),
+		actions:          make(map[Hash]*Action),
+		commandProviders: cpMap,
 	}
 }
 
@@ -31,20 +29,21 @@ func (s *Service) Clear() {
 	s.actions = make(map[Hash]*Action)
 }
 
-// Execute takes an incoming action and performs its command.
+// ExecuteAction takes an incoming action and performs its command.
 // If the action is performed without an error, it gets stored in memory for later retrieval.
-func (s *Service) Execute(a *Action) (*Response, error) {
+func (s *Service) ExecuteAction(a *Action) (*Response, error) {
 	if s.actions[a.Hash] != nil {
 		return nil, ErrDuplicateAction
 	}
-	if s.Modules == nil || s.Modules[a.Module] == nil {
-		return nil, errors.New("invalid module provided by action")
+	if s.commandProviders[a.CommandProvider] == nil {
+		return nil, errors.New("invalid command provider name")
 	}
-	m := s.Modules[a.Module]
-	c, err := m.Command(a.Command)
-	if err != nil {
-		return nil, err
+	provider := s.commandProviders[a.CommandProvider]
+	commands := provider.Commands()
+	if commands[a.Command] == nil {
+		return nil, errors.New("invalid command name")
 	}
+	c := commands[a.Command]
 	res, err := c.Execute(a.Parameters)
 	if err != nil {
 		return nil, err

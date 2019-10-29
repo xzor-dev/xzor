@@ -48,7 +48,7 @@ type testCommand struct {
 	callback func(map[string]interface{}) ([]byte, error)
 }
 
-func (c *testCommand) Execute(params map[string]interface{}) (*command.Response, error) {
+func (c *testCommand) Execute(params command.Params) (*command.Response, error) {
 	res, err := c.callback(params)
 	if err != nil {
 		return nil, err

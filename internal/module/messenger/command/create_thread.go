@@ -1,8 +1,6 @@
 package command
 
 import (
-	"errors"
-
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
@@ -18,24 +16,16 @@ type CreateThread struct {
 }
 
 // Execute the command using the provided arguments to create a new thread.
-func (ct *CreateThread) Execute(args []interface{}) (*command.Response, error) {
-	if ct.Service == nil {
-		return nil, errors.New("no messenger service provided to command")
+func (ct *CreateThread) Execute(params command.Params) (*command.Response, error) {
+	boardHash, err := params.String("board")
+	if err != nil {
+		return nil, err
 	}
-	if len(args) < 2 {
-		return nil, errors.New("expected at least two arguments")
+	title, err := params.String("title")
+	if err != nil {
+		return nil, err
 	}
-
-	boardHash, ok := args[0].(messenger.BoardHash)
-	if !ok {
-		return nil, errors.New("couldn't convert argument to BoardHash")
-	}
-	title, ok := args[1].(string)
-	if !ok {
-		return nil, errors.New("couldn't convert argument to string")
-	}
-
-	thread, err := ct.Service.NewThread(boardHash, title)
+	thread, err := ct.Service.NewThread(messenger.BoardHash(boardHash), title)
 	if err != nil {
 		return nil, err
 	}
