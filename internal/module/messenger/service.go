@@ -7,6 +7,13 @@ type Service struct {
 	Storage *storage.Service
 }
 
+// NewService creates a new messenger service.
+func NewService(storage *storage.Service) *Service {
+	return &Service{
+		Storage: storage,
+	}
+}
+
 func (s *Service) boardID(hash BoardHash) storage.RecordID {
 	id := "board-" + string(hash)
 	return storage.RecordID(id)
@@ -172,11 +179,4 @@ func (s *Service) Thread(hash ThreadHash) (*Thread, error) {
 		return nil, err
 	}
 	return thread, nil
-}
-
-// NewService creates a new messenger service.
-func NewService(storage *storage.Service) *Service {
-	return &Service{
-		Storage: storage,
-	}
 }

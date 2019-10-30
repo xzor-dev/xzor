@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/xzor-dev/xzor/internal/module/messenger"
-	"github.com/xzor-dev/xzor/internal/module/messenger/command"
+	msg_command "github.com/xzor-dev/xzor/internal/module/messenger/command"
 	"github.com/xzor-dev/xzor/internal/xzor/action"
-	"github.com/xzor-dev/xzor/internal/xzor/module"
+	"github.com/xzor-dev/xzor/internal/xzor/command"
 	"github.com/xzor-dev/xzor/internal/xzor/storage"
 	"github.com/xzor-dev/xzor/internal/xzor/storage/file"
 	"github.com/xzor-dev/xzor/internal/xzor/storage/json"
@@ -26,22 +26,13 @@ func TestModule(t *testing.T) {
 			RootDir: dir + "/testdata",
 		},
 	}
-	srv := &messenger.Service{
-		Storage: store,
-	}
-	mod := &messenger.Module{
-		Commander: command.NewCommander(srv),
-		Service:   srv,
-	}
-	actions := &action.Service{
-		Modules: map[module.Name]module.Module{
-			mod.Name(): mod,
-		},
-	}
+	srv := messenger.NewService(store)
+	mod := messenger.NewModule(srv, msg_command.Commands(srv))
+	actions := action.NewService([]command.Provider{mod})
 
 	type testRun struct {
 		Name     string
-		Action   func() *action.Action
+		Action   func() (*action.Action, error)
 		Validate func(*action.Response) error
 		TearDown func(*action.Response) error
 	}
@@ -53,12 +44,10 @@ func TestModule(t *testing.T) {
 	testRuns := []testRun{
 		testRun{
 			Name: "Create Board",
-			Action: func() *action.Action {
-				return &action.Action{
-					Module:    mod.Name(),
-					Command:   command.CreateBoardName,
-					Arguments: []interface{}{"foo"},
-				}
+			Action: func() (*action.Action, error) {
+				return action.New(mod.CommandProviderName(), msg_command.CreateBoardName, command.Params{
+					"title": "foo",
+				})
 			},
 			Validate: func(res *action.Response) error {
 				board, ok := res.Value.(*messenger.Board)
@@ -81,12 +70,11 @@ func TestModule(t *testing.T) {
 		},
 		testRun{
 			Name: "Create Thread",
-			Action: func() *action.Action {
-				return &action.Action{
-					Module:    mod.Name(),
-					Command:   command.CreateThreadName,
-					Arguments: []interface{}{boardHash, "Test Thread"},
-				}
+			Action: func() (*action.Action, error) {
+				return action.New(mod.CommandProviderName(), msg_command.CreateThreadName, command.Params{
+					"board": boardHash,
+					"title": "Test Thread",
+				})
 			},
 			Validate: func(res *action.Response) error {
 				thread, ok := res.Value.(*messenger.Thread)
@@ -116,12 +104,11 @@ func TestModule(t *testing.T) {
 		},
 		testRun{
 			Name: "Create Message",
-			Action: func() *action.Action {
-				return &action.Action{
-					Module:    mod.Name(),
-					Command:   command.CreateMessageName,
-					Arguments: []interface{}{threadHash, "hello world"},
-				}
+			Action: func() (*action.Action, error) {
+				return action.New(mod.CommandProviderName(), msg_command.CreateMessageName, command.Params{
+					"thread": threadHash,
+					"body":   "hello world",
+				})
 			},
 			Validate: func(res *action.Response) error {
 				message, ok := res.Value.(*messenger.Message)
@@ -153,8 +140,11 @@ func TestModule(t *testing.T) {
 
 	for _, r := range testRuns {
 		t.Run(r.Name, func(t *testing.T) {
-			act := r.Action()
-			res, err := actions.Execute(act)
+			act, err := r.Action()
+			if err != nil {
+				t.Fatalf("%v", err)
+			}
+			res, err := actions.ExecuteAction(act)
 			if err != nil {
 				t.Fatalf("%v", err)
 			}

@@ -1,6 +1,8 @@
 package command
 
 import (
+	"errors"
+
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
@@ -17,9 +19,13 @@ type CreateMessage struct {
 
 // Execute runs the command with the provided parameters to create a new message.
 func (cm *CreateMessage) Execute(params command.Params) (*command.Response, error) {
-	threadHash, err := params.String("thread")
-	if err != nil {
-		return nil, err
+	threadVal, ok := params["thread"]
+	if !ok {
+		return nil, errors.New("no 'thread' parameter provided")
+	}
+	threadHash, ok := threadVal.(messenger.ThreadHash)
+	if !ok {
+		return nil, errors.New("could not convert 'thread' parameter to ThreadHash")
 	}
 	body, err := params.String("body")
 	if err != nil {

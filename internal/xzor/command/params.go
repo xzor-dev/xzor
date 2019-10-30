@@ -1,16 +1,19 @@
 package command
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // Params is an arbitrary map of parameters used when executing commands.
 type Params map[string]interface{}
 
 // String returns a parameter as a string.
 func (p Params) String(name string) (string, error) {
-	if p[name] == nil {
+	val, ok := p[name]
+	if !ok {
 		return "", fmt.Errorf("invalid parameter name: %s", name)
 	}
-	str, ok := p[name].(string)
+	str, ok := val.(string)
 	if !ok {
 		return "", fmt.Errorf("could not convert parameter '%s' to a string", name)
 	}

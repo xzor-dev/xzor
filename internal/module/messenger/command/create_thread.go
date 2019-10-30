@@ -1,6 +1,8 @@
 package command
 
 import (
+	"errors"
+
 	"github.com/xzor-dev/xzor/internal/module/messenger"
 	"github.com/xzor-dev/xzor/internal/xzor/command"
 )
@@ -17,9 +19,13 @@ type CreateThread struct {
 
 // Execute the command using the provided arguments to create a new thread.
 func (ct *CreateThread) Execute(params command.Params) (*command.Response, error) {
-	boardHash, err := params.String("board")
-	if err != nil {
-		return nil, err
+	boardVal, ok := params["board"]
+	if !ok {
+		return nil, errors.New("no 'board' parameter provided")
+	}
+	boardHash, ok := boardVal.(messenger.BoardHash)
+	if !ok {
+		return nil, errors.New("could not convert 'board' parameter to BoardHash")
 	}
 	title, err := params.String("title")
 	if err != nil {

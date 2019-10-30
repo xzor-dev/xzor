@@ -22,10 +22,7 @@ func TestIncomingAction(t *testing.T) {
 			commandName: c,
 		},
 	}
-	providers := map[command.ProviderName]command.Provider{
-		command.ProviderName(moduleName): m,
-	}
-	as := action.NewService(providers)
+	as := action.NewService([]command.Provider{m})
 	a := &action.Action{
 		Command:         commandName,
 		CommandProvider: command.ProviderName(moduleName),
@@ -50,10 +47,7 @@ func TestDuplicateActionIgnore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	providers := map[command.ProviderName]command.Provider{
-		"test-mod": mod,
-	}
-	s := action.NewService(providers)
+	s := action.NewService([]command.Provider{mod})
 
 	_, err = s.ExecuteAction(a)
 	if err != nil {
@@ -78,7 +72,7 @@ func newTestCommand(name command.Name) *testCommand {
 	}
 }
 
-func (c *testCommand) Execute(params map[string]interface{}) (*command.Response, error) {
+func (c *testCommand) Execute(params command.Params) (*command.Response, error) {
 	c.lastParams = params
 	return &command.Response{
 		Value: params,
@@ -93,13 +87,13 @@ var _ module.Module = &testModule{}
 var _ command.Provider = &testModule{}
 
 type testModule struct {
-	commands map[command.Name]command.Command
+	commands command.Map
 	name     module.Name
 }
 
 func newTestModule(name module.Name, commands []command.Command) *testModule {
 	mod := &testModule{
-		commands: make(map[command.Name]command.Command),
+		commands: make(command.Map),
 		name:     name,
 	}
 	for _, cmd := range commands {
@@ -108,8 +102,12 @@ func newTestModule(name module.Name, commands []command.Command) *testModule {
 	return mod
 }
 
-func (m *testModule) Commands() map[command.Name]command.Command {
+func (m *testModule) Commands() command.Map {
 	return m.commands
+}
+
+func (m *testModule) CommandProviderName() command.ProviderName {
+	return command.ProviderName(m.name)
 }
 
 func (m *testModule) Name() module.Name {

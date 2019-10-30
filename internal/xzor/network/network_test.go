@@ -114,20 +114,3 @@ func TestNetworkPropagation(t *testing.T) {
 		t.Fatalf("expected action %s from nodeA, got %s", actionB.Hash, nodeAAction.Hash)
 	}
 }
-
-var _ action.Handler = &testActionHandler{}
-
-type testActionHandler struct {
-	actions chan *action.Action
-}
-
-func newTestActionHandler() *testActionHandler {
-	return &testActionHandler{
-		actions: make(chan *action.Action),
-	}
-}
-
-func (h *testActionHandler) HandleAction(a *action.Action) error {
-	h.actions <- a
-	return nil
-}
