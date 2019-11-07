@@ -1,5 +1,10 @@
 {
-	"Jobs": {
-		"test-job": true
+	"jobs": {
+		"messenger": {
+			"enabled": true
+		},
+		"sample": {
+			"enabled": true
+		}
 	}
 }

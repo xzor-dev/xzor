@@ -1,26 +1,23 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"log"
 	"os"
-	"strings"
+	"time"
 
-	"github.com/xzor-dev/xzor/cmd/xzor-sim/job"
+	"github.com/xzor-dev/xzor/cmd/xzor-sim/jobs"
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
+	"github.com/xzor-dev/xzor/internal/module/messenger"
+	msg_command "github.com/xzor-dev/xzor/internal/module/messenger/command"
+	"github.com/xzor-dev/xzor/internal/xzor/action"
+	"github.com/xzor-dev/xzor/internal/xzor/command"
+	"github.com/xzor-dev/xzor/internal/xzor/instance"
+	"github.com/xzor-dev/xzor/internal/xzor/network"
+	"github.com/xzor-dev/xzor/internal/xzor/storage"
+	storage_file "github.com/xzor-dev/xzor/internal/xzor/storage/file"
+	storage_json "github.com/xzor-dev/xzor/internal/xzor/storage/json"
 )
-
-var _ simulator.Job = &actionJob{}
-
-type actionJob struct{}
-
-func (j *actionJob) Config() *simulator.JobConfig {
-	return &simulator.JobConfig{}
-}
-
-func (j *actionJob) Execute(p *simulator.JobParams) error {
-	return nil
-}
 
 func main() {
 	config, err := loadConfig()
@@ -28,73 +25,119 @@ func main() {
 		panic(err)
 	}
 
-	n, err := simulator.NewNetwork(config.SimCofig, &simulator.NetworkWebBuilder{})
-	sim := simulator.New(config.SimCofig, n)
-	reader := bufio.NewReader(os.Stdin)
+	builder := simulator.NewNetworkWebBuilder(config.Network.TotalNodes, config.Network.MaxConnectionsPerNode)
+	nodes, err := builder.Build()
+	if err != nil {
+		panic(err)
+	}
 
-	fmt.Printf("simulator started with %d nodes\n", config.SimCofig.TotalNodes)
+	dir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+	instances := make([]*instance.Instance, len(nodes))
+	for i, node := range nodes {
+		inst, err := newInstance(i, dir+"/testdata", node)
+		if err != nil {
+			panic(err)
+		}
+		instances[i] = inst
+	}
+
+	n, err := simulator.NewNetwork(nodes)
+	if err != nil {
+		panic(err)
+	}
+
+	sim := simulator.New(config.Simulator, n)
+
+	fmt.Printf("simulator started with %d nodes\n", config.Network.TotalNodes)
 
 	for {
-		fmt.Print("\n> ")
-		cmd, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Printf("error: %v", err)
-			continue
+		for jobID, jobConfig := range config.Jobs {
+			if !jobConfig.Enabled {
+				continue
+			}
+			go runJob(sim, jobID)
 		}
-		cmd = strings.Replace(cmd, "\n", "", -1)
-		cmdParts := strings.Split(cmd, " ")
-		if len(cmdParts) < 2 {
-			fmt.Println("expecting at least 2 arguments")
-			fmt.Println("usage: module action [param1, [param2, ...]]")
-			continue
-		}
-
-		moduleName := cmdParts[0]
-		actionName := cmdParts[1]
-		params := cmdParts[2:]
-
-		fmt.Printf("got command: %s.%s %s\n", moduleName, actionName, strings.Join(params, ", "))
-
-		job := &actionJob{}
-		res, err := sim.RunJob(job)
-		if err != nil {
-			fmt.Printf("job failed: %v\n", err)
-			continue
-		}
-
-		fmt.Println("job result:")
-		fmt.Printf("\texecutions: %d\n", res.TotalExecutions)
-		fmt.Printf("\terrors: %d\n", len(res.Errors))
-		fmt.Printf("\tfailed: %v\n", res.Failed)
+		time.Sleep(time.Second * 10)
 	}
 }
 
 func loadConfig() (*Config, error) {
 	return &Config{
-		Jobs: map[job.ID]bool{
-			job.TestJobID: true,
+		Jobs: map[simulator.JobID]*JobConfig{
+			(&jobs.MessengerJob{}).JobID(): &JobConfig{
+				Enabled: true,
+			},
+			(&jobs.TestJob{}).JobID(): &JobConfig{
+				Enabled: false,
+			},
 		},
-		SimCofig: &simulator.Config{
-			TotalNodes:         32,
-			ConnectionsPerNode: 4,
+		Network: &NetworkConfig{
+			TotalNodes:            32,
+			MaxConnectionsPerNode: 4,
 		},
+		Simulator: &simulator.Config{},
 	}, nil
 }
 
-func generateJobs(c *Config) ([]simulator.Job, error) {
-	jobs := make([]simulator.Job, 0)
-	for id, enabled := range c.Jobs {
-		if !enabled {
-			continue
-		}
-		if job.Jobs[id] == nil {
-			return nil, fmt.Errorf("invalid job ID: %s", id)
-		}
-		j, err := job.Jobs[id].NewJob()
-		if err != nil {
-			return nil, err
-		}
-		jobs = append(jobs, j)
+func newInstance(index int, dataDir string, node *network.Node) (*instance.Instance, error) {
+	msgRecordDir := fmt.Sprintf("%s/instance-%d/messenger", dataDir, index)
+	msgRecordStore := storage_file.NewRecordStore(msgRecordDir)
+	msgStorage := storage.NewService(&storage_json.EncodeDecoder{}, msgRecordStore)
+	msgService := messenger.NewService(msgStorage)
+	msgCommands := msg_command.Commands(msgService)
+	msgMod := messenger.NewModule(msgService, msgCommands)
+	actionService := action.NewService([]command.Provider{msgMod})
+
+	inst := instance.New(actionService, node, nil)
+	err := inst.Start()
+	if err != nil {
+		return nil, err
 	}
-	return jobs, nil
+	return inst, nil
+}
+
+func runJob(sim *simulator.Simulator, jobID simulator.JobID) {
+	fmt.Printf("running job: %s\n", jobID)
+
+	f, err := jobs.Registry.Get(jobID)
+	if err != nil {
+		log.Printf("error: %v", err)
+		return
+	}
+	j, err := f.NewJob()
+	if err != nil {
+		log.Printf("error: %v", err)
+		return
+	}
+	res, err := sim.RunJob(j)
+	if err != nil {
+		log.Printf("error: %v", err)
+		return
+	}
+
+	desc := `
+-----------------------
+JOB: %s
+-----------------------
+SUCCESSFUL ..... %s
+EXECUTIONS ..... %d
+ERRORS ......... %d
+-----------------------
+`
+
+	success := "YES"
+	if res.Failed {
+		success = "NO"
+	}
+
+	fmt.Printf(desc, jobID, success, res.TotalExecutions, len(res.Errors))
+	for i, err := range res.Errors {
+		fmt.Printf("ERROR #%d: %v\n", i, err)
+	}
+	if len(res.Errors) > 0 {
+		fmt.Print("-----------------------\n")
+	}
 }

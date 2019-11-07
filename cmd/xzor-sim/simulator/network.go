@@ -3,6 +3,7 @@ package simulator
 import (
 	"net"
 
+	"github.com/xzor-dev/xzor/internal/xzor/action"
 	"github.com/xzor-dev/xzor/internal/xzor/network"
 )
 
@@ -12,11 +13,7 @@ type Network struct {
 }
 
 // NewNetwork generates a new network map using the provided configuration and builder.
-func NewNetwork(config *Config, builder NetworkBuilder) (*Network, error) {
-	nodes, err := builder.Build(config)
-	if err != nil {
-		return nil, err
-	}
+func NewNetwork(nodes []*network.Node) (*Network, error) {
 	return &Network{
 		Nodes: nodes,
 	}, nil
@@ -30,34 +27,52 @@ func (n *Network) Node(index int) (*network.Node, error) {
 	return n.Nodes[index], nil
 }
 
+// Push sends an action to the root node.
+func (n *Network) Push(a *action.Action) error {
+	node, err := n.Node(0)
+	if err != nil {
+		return err
+	}
+	return node.Write(a)
+}
+
 // NetworkBuilder is used to build network configurations.
 type NetworkBuilder interface {
-	Build(*Config) ([]*network.Node, error)
+	Build() ([]*network.Node, error)
 }
 
 // NetworkLoopBuilder is used to build a network map where
 // nodes eventually loop back to the first node.
-type NetworkLoopBuilder struct{}
+type NetworkLoopBuilder struct {
+	MaxConnections int
+	TotalNodes     int
+}
+
+// NewNetworkLoopBuilder creates a new NetworkLoopBuilder using
+// the supplied arguments.
+func NewNetworkLoopBuilder(totalNodes int, maxConnections int) *NetworkLoopBuilder {
+	return &NetworkLoopBuilder{
+		MaxConnections: maxConnections,
+		TotalNodes:     totalNodes,
+	}
+}
 
 // Build generates a looped network map of nodes.
-func (b *NetworkLoopBuilder) Build(c *Config) ([]*network.Node, error) {
-	if c.ConnectionsPerNode >= c.TotalNodes {
-		return nil, ErrNetworkSizeTooSmall
-	}
-	nodes := make([]*network.Node, c.TotalNodes)
-	listeners := make([]*network.MockListener, c.TotalNodes)
-	for i := 0; i < c.TotalNodes; i++ {
+func (b *NetworkLoopBuilder) Build() ([]*network.Node, error) {
+	nodes := make([]*network.Node, b.TotalNodes)
+	listeners := make([]*network.MockListener, b.TotalNodes)
+	for i := 0; i < b.TotalNodes; i++ {
 		nodes[i] = network.NewNode()
 		listeners[i] = &network.MockListener{}
 	}
 
-	for i := 0; i < c.TotalNodes; i++ {
+	for i := 0; i < b.TotalNodes; i++ {
 		nodeA := nodes[i]
 
-		for j := 0; j < c.ConnectionsPerNode; j++ {
+		for j := 0; j < b.MaxConnections; j++ {
 			next := i + j + 1
-			if next >= c.TotalNodes {
-				diff := next - c.TotalNodes
+			if next >= b.TotalNodes {
+				diff := next - b.TotalNodes
 				if diff == i {
 					diff++
 				}
@@ -71,7 +86,7 @@ func (b *NetworkLoopBuilder) Build(c *Config) ([]*network.Node, error) {
 			listenerB.AddConnection(pipeB)
 		}
 	}
-	for i := 0; i < c.TotalNodes; i++ {
+	for i := 0; i < b.TotalNodes; i++ {
 		nodes[i].AddListener(listeners[i])
 	}
 
@@ -79,24 +94,36 @@ func (b *NetworkLoopBuilder) Build(c *Config) ([]*network.Node, error) {
 }
 
 // NetworkWebBuilder builds a web-like network map.
-type NetworkWebBuilder struct{}
+type NetworkWebBuilder struct {
+	MaxConnections int
+	TotalNodes     int
+}
+
+// NewNetworkWebBuilder creates a new NetworkWebBuilder using
+// the supplied arguments.
+func NewNetworkWebBuilder(totalNodes int, maxConnections int) *NetworkWebBuilder {
+	return &NetworkWebBuilder{
+		MaxConnections: maxConnections,
+		TotalNodes:     totalNodes,
+	}
+}
 
 // Build generates a slice of nodes arranged in a web configuration.
-func (b *NetworkWebBuilder) Build(c *Config) ([]*network.Node, error) {
-	nodes := make([]*network.Node, c.TotalNodes)
-	listeners := make([]*network.MockListener, c.TotalNodes)
+func (b *NetworkWebBuilder) Build() ([]*network.Node, error) {
+	nodes := make([]*network.Node, b.TotalNodes)
+	listeners := make([]*network.MockListener, b.TotalNodes)
 
-	for i := 0; i < c.TotalNodes; i++ {
+	for i := 0; i < b.TotalNodes; i++ {
 		nodes[i] = network.NewNode()
 		listeners[i] = &network.MockListener{}
 	}
 
-	for i := 0; i < c.TotalNodes; i++ {
+	for i := 0; i < b.TotalNodes; i++ {
 		nodeA := nodes[i]
 		listenerA := listeners[i]
 
-		for j := 0; j < c.ConnectionsPerNode; j++ {
-			k := i*c.ConnectionsPerNode + j + 1
+		for j := 0; j < b.MaxConnections; j++ {
+			k := i*b.MaxConnections + j + 1
 			if len(nodes) < k+1 {
 				break
 			}

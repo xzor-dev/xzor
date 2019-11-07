@@ -8,3 +8,12 @@ func NewRandomBytes(len int) ([]byte, error) {
 	_, err := rand.Read(rb)
 	return rb, err
 }
+
+// NewRandomHash generates a random string hash at the specified length.
+func NewRandomHash(len int) (string, error) {
+	rb, err := NewRandomBytes(len)
+	if err != nil {
+		return "", err
+	}
+	return NewHash(rb)
+}

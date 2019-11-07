@@ -2,6 +2,8 @@ package action
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/xzor-dev/xzor/internal/xzor/command"
@@ -51,12 +53,13 @@ func NewHash(providerName command.ProviderName, cmd command.Name, params map[str
 	if err != nil {
 		return "", err
 	}
-	hs := string(providerName) + string(cmd) + string(pb) + string(t.Unix())
+	hs := fmt.Sprintf("%s-%s-%s-%d", providerName, cmd, pb, t.Unix())
 	hb := []byte(hs)
 	hash, err := common.NewHash(hb)
 	if err != nil {
 		return "", err
 	}
+	log.Printf("made hash '%s' from string '%s'", hash, hs)
 	return Hash(hash), nil
 }
 

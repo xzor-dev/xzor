@@ -2,19 +2,61 @@ package simulator_test
 
 import (
 	"errors"
-	"fmt"
+	"log"
 	"testing"
 	"time"
 
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 	"github.com/xzor-dev/xzor/internal/xzor/action"
+	"github.com/xzor-dev/xzor/internal/xzor/common"
 )
 
 func TestSimulator(t *testing.T) {
-	config := &simulator.Config{
-		TotalNodes: 2,
+	totalNodes := 12
+	connectionsPerNode := 5
+	builder := simulator.NewNetworkWebBuilder(totalNodes, connectionsPerNode)
+	nodes, err := builder.Build()
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
-	sim := simulator.New(config, nil)
+	nw, err := simulator.NewNetwork(nodes)
+	firstNode, err := nw.Node(0)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	lastNode, err := nw.Node(totalNodes - 1)
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	firstNodeActions := make(chan *action.Action, 20)
+	lastNodeActions := make(chan *action.Action, 20)
+
+	go func() {
+		for {
+			a, err := firstNode.Read()
+			if err != nil {
+				log.Printf("failed to read from first node: %v", err)
+				continue
+			}
+			log.Printf("reading action %s from first node", a.Hash)
+			firstNodeActions <- a
+		}
+	}()
+	go func() {
+		for {
+			a, err := lastNode.Read()
+			if err != nil {
+				log.Printf("failed to read from last node: %v", err)
+				continue
+			}
+			log.Printf("reading action %s from last node", a.Hash)
+			lastNodeActions <- a
+		}
+	}()
+
+	config := &simulator.Config{}
+	sim := simulator.New(config, nw)
 	t.Run("Run Empty Jobs", func(t *testing.T) {
 		if _, err := sim.Run(nil); err != simulator.ErrNoJobs {
 			t.Fatalf("unexpected error: %v", err)
@@ -22,11 +64,19 @@ func TestSimulator(t *testing.T) {
 	})
 
 	jobA := &testJob{
+		jobID: "job-a",
 		config: &simulator.JobConfig{
 			ExecutionCount: 2,
 		},
-		callback: func(p *simulator.JobParams) error {
-			return nil
+		callback: func(p *simulator.JobParams) (*action.Action, error) {
+			hash, err := common.NewRandomHash(10)
+			if err != nil {
+				return nil, err
+			}
+			return action.New("job-a", "cmd-a", map[string]interface{}{
+				"index": p.ExecutionIndex,
+				"hash":  hash,
+			})
 		},
 	}
 	t.Run("Run Single Job", func(t *testing.T) {
@@ -35,18 +85,41 @@ func TestSimulator(t *testing.T) {
 			t.Fatalf("%v", err)
 		}
 		if len(jobRes.Errors) > 0 {
-			t.Fatalf("job produced %d errors", len(jobRes.Errors))
+			log.Printf("job produced %d errors", len(jobRes.Errors))
+			for i, err := range jobRes.Errors {
+				log.Printf("error #%d: %v", i+1, err)
+			}
 		}
 		if jobRes.TotalExecutions != 2 {
 			t.Fatalf("expected 2 executions, got %d", jobRes.TotalExecutions)
 		}
+
+		a1 := <-lastNodeActions
+		found := false
+		for _, a2 := range jobRes.Actions {
+			if a2.Hash == a1.Hash {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("expected action %s to be in the job result", a1.Hash)
+		}
 	})
 
 	jobB := &testJob{
+		jobID:  "job-b",
 		config: &simulator.JobConfig{},
-		callback: func(p *simulator.JobParams) error {
+		callback: func(p *simulator.JobParams) (*action.Action, error) {
 			time.Sleep(time.Millisecond)
-			return nil
+
+			hash, err := common.NewRandomHash(10)
+			if err != nil {
+				return nil, err
+			}
+			return action.New("job-b", "cmd-b", map[string]interface{}{
+				"index": p.ExecutionIndex,
+				"hash":  hash,
+			})
 		},
 	}
 	t.Run("Two Jobs", func(t *testing.T) {
@@ -54,121 +127,18 @@ func TestSimulator(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
+		log.Printf("jobs failed: %d", runRes.TotalFailed)
+		log.Printf("jobs completed: %d", runRes.TotalCompleted)
+		if len(runRes.Errors) > 0 {
+			log.Printf("jobs produced %d errors", len(runRes.Errors))
+			for i, err := range runRes.Errors {
+				log.Printf("error #%d: %v", i+1, err)
+			}
+		}
 		if runRes.TotalCompleted != 2 {
 			t.Fatalf("expected 2 job completions, got %d", runRes.TotalCompleted)
 		}
-	})
-}
 
-func TestSimulatedNetwork(t *testing.T) {
-	networkSize := 32
-	connsPerNode := 6
-	c := &simulator.Config{
-		ConnectionsPerNode: connsPerNode,
-		TotalNodes:         networkSize,
-	}
-	n, err := simulator.NewNetwork(c, &simulator.NetworkLoopBuilder{})
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if len(n.Nodes) != networkSize {
-		t.Fatalf("expected network to have %d nodes, got %d", networkSize, len(n.Nodes))
-	}
-	rootNode, err := n.Node(0)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	if len(rootNode.Connections()) != connsPerNode {
-		t.Fatalf("expected root node to have %d connections, got %d", connsPerNode, len(rootNode.Connections()))
-	}
-
-	actionA, err := action.New("test-mod", "test-cmd", nil)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	err = rootNode.Write(actionA)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
-	errors := make(chan error, networkSize-1)
-	for i := 1; i < networkSize; i++ {
-		go func(i int) {
-			node, err := n.Node(i)
-			if err != nil {
-				t.Fatalf("%v", err)
-			}
-			a, err := node.Read()
-			if err != nil {
-				errors <- err
-			} else if a.Hash != actionA.Hash {
-				errors <- fmt.Errorf("expected action hash %s from node%d, got %s", actionA.Hash, i, a.Hash)
-			} else {
-				errors <- nil
-			}
-		}(i)
-	}
-	for i := 1; i < networkSize; i++ {
-		err := <-errors
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-	}
-}
-
-func TestNetworkWeb(t *testing.T) {
-	c := &simulator.Config{
-		ConnectionsPerNode: 3,
-		TotalNodes:         8,
-	}
-	n, err := simulator.NewNetwork(c, &simulator.NetworkWebBuilder{})
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-
-	if node, err := n.Node(0); err != nil {
-		t.Fatalf("%v", err)
-	} else if len(node.Connections()) != c.ConnectionsPerNode {
-		t.Fatalf("expected node #0 to have %d connections, got %d", c.ConnectionsPerNode, len(node.Connections()))
-	}
-
-	if node, err := n.Node(1); err != nil {
-		t.Fatalf("%v", err)
-	} else if len(node.Connections()) != 4 {
-		t.Fatalf("expected node #1 to have %d connections, got %d", 4, len(node.Connections()))
-	}
-
-	if node, err := n.Node(2); err != nil {
-		t.Fatalf("%v", err)
-	} else if len(node.Connections()) != 2 {
-		t.Fatalf("expected node #2 to have %d connections, got %d", 2, len(node.Connections()))
-	}
-
-	t.Run("Propagate Backwards", func(t *testing.T) {
-		node5, err := n.Node(5)
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		if len(node5.Connections()) != 1 {
-			t.Fatalf("expected node #5 to have %d connections, got %d", 1, len(node5.Connections()))
-		}
-		a, err := action.New("test-mod", "test-cmd", nil)
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		err = node5.Write(a)
-
-		node0, err := n.Node(0)
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		a0, err := node0.Read()
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		if a0.Hash != a.Hash {
-			t.Fatalf("expected action hash %s, got %s", a.Hash, a0.Hash)
-		}
 	})
 }
 
@@ -176,16 +146,21 @@ var _ simulator.Job = &testJob{}
 
 type testJob struct {
 	config   *simulator.JobConfig
-	callback func(*simulator.JobParams) error
+	callback func(*simulator.JobParams) (*action.Action, error)
+	jobID    simulator.JobID
 }
 
 func (j *testJob) Config() *simulator.JobConfig {
 	return j.config
 }
 
-func (j *testJob) Execute(params *simulator.JobParams) error {
+func (j *testJob) Execute(params *simulator.JobParams) (*action.Action, error) {
 	if j.callback == nil {
-		return errors.New("no callback function")
+		return nil, errors.New("no callback function")
 	}
 	return j.callback(params)
+}
+
+func (j *testJob) JobID() simulator.JobID {
+	return j.jobID
 }

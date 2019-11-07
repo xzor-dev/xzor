@@ -1,11 +1,17 @@
 package simulator
 
-import "time"
+import (
+	"sync"
+	"time"
+
+	"github.com/xzor-dev/xzor/internal/xzor/action"
+)
 
 // Job is the interface for all simulator jobs.
 type Job interface {
 	Config() *JobConfig
-	Execute(*JobParams) error
+	Execute(*JobParams) (*action.Action, error)
+	JobID() JobID
 }
 
 // JobConfig contains configuration values for a job.
@@ -14,6 +20,9 @@ type JobConfig struct {
 	ExecutionInterval time.Duration // Duration between each execution.
 }
 
+// JobID is a string used to identify a job.
+type JobID string
+
 // JobParams are provided to each job during execution.
 type JobParams struct {
 	ExecutionIndex int
@@ -21,9 +30,19 @@ type JobParams struct {
 
 // JobResult contains information for a single job.
 type JobResult struct {
+	Actions         []*action.Action
 	Failed          bool
 	Errors          []error
 	TotalExecutions int
+
+	mux sync.Mutex
+}
+
+// AddAction adds an action to the job result in a thread-safe way.
+func (r *JobResult) AddAction(a *action.Action) {
+	r.mux.Lock()
+	r.Actions = append(r.Actions, a)
+	r.mux.Unlock()
 }
 
 // JobsResult contains information for a group of jobs.
