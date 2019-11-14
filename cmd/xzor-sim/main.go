@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"time"
 
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/jobs"
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
@@ -19,7 +19,17 @@ import (
 	storage_json "github.com/xzor-dev/xzor/internal/xzor/storage/json"
 )
 
+var _ io.Writer = &logWriter{}
+
+type logWriter struct{}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	return 0, nil
+}
+
 func main() {
+	log.SetOutput(&logWriter{})
+
 	config, err := loadConfig()
 	if err != nil {
 		panic(err)
@@ -37,7 +47,7 @@ func main() {
 	}
 	instances := make([]*instance.Instance, len(nodes))
 	for i, node := range nodes {
-		inst, err := newInstance(i, dir+"/testdata", node)
+		inst, err := newInstance(i, dir+"/simdata", node)
 		if err != nil {
 			panic(err)
 		}
@@ -50,18 +60,41 @@ func main() {
 	}
 
 	sim := simulator.New(config.Simulator, n)
-
-	fmt.Printf("simulator started with %d nodes\n", config.Network.TotalNodes)
-
-	for {
-		for jobID, jobConfig := range config.Jobs {
-			if !jobConfig.Enabled {
-				continue
-			}
-			go runJob(sim, jobID)
+	jobCount := 0
+	for _, jc := range config.Jobs {
+		if jc.Enabled {
+			jobCount++
 		}
-		time.Sleep(time.Second * 10)
 	}
+
+	fmt.Printf("# SIMULATOR STARTED\n")
+	fmt.Printf("# TOTAL NODES ..... %d\n", config.Network.TotalNodes)
+	fmt.Printf("# TOTAL JOBS ...... %d\n", jobCount)
+
+	results := make(chan *simulator.JobResult, jobCount)
+	for jobID, jobConfig := range config.Jobs {
+		if !jobConfig.Enabled {
+			continue
+		}
+		log.Printf("running job: %s", jobID)
+		go func(jobID simulator.JobID) {
+			res, err := runJob(sim, jobID)
+			if err != nil {
+				log.Printf("failed to run job %s: %v", jobID, err)
+			}
+			results <- res
+		}(jobID)
+	}
+
+	for i := 0; i < jobCount; i++ {
+		res := <-results
+		if res == nil {
+			continue
+		}
+		printJobResult(res)
+	}
+
+	os.RemoveAll(dir + "/simdata")
 }
 
 func loadConfig() (*Config, error) {
@@ -71,12 +104,12 @@ func loadConfig() (*Config, error) {
 				Enabled: true,
 			},
 			(&jobs.TestJob{}).JobID(): &JobConfig{
-				Enabled: false,
+				Enabled: true,
 			},
 		},
 		Network: &NetworkConfig{
-			TotalNodes:            32,
-			MaxConnectionsPerNode: 4,
+			TotalNodes:            64,
+			MaxConnectionsPerNode: 6,
 		},
 		Simulator: &simulator.Config{},
 	}, nil
@@ -99,45 +132,43 @@ func newInstance(index int, dataDir string, node *network.Node) (*instance.Insta
 	return inst, nil
 }
 
-func runJob(sim *simulator.Simulator, jobID simulator.JobID) {
-	fmt.Printf("running job: %s\n", jobID)
-
-	f, err := jobs.Registry.Get(jobID)
-	if err != nil {
-		log.Printf("error: %v", err)
-		return
-	}
-	j, err := f.NewJob()
-	if err != nil {
-		log.Printf("error: %v", err)
-		return
-	}
-	res, err := sim.RunJob(j)
-	if err != nil {
-		log.Printf("error: %v", err)
-		return
-	}
-
-	desc := `
------------------------
-JOB: %s
------------------------
-SUCCESSFUL ..... %s
-EXECUTIONS ..... %d
-ERRORS ......... %d
------------------------
-`
-
+func printJobResult(res *simulator.JobResult) {
 	success := "YES"
 	if res.Failed {
 		success = "NO"
 	}
 
-	fmt.Printf(desc, jobID, success, res.TotalExecutions, len(res.Errors))
+	dur := res.EndTime.Sub(res.StartTime)
+
+	fmt.Printf("\n")
+	fmt.Printf("-----------------\n")
+	fmt.Printf("| JOB ........... %s\n", res.JobID)
+	fmt.Printf("| DURATION ...... %s\n", dur)
+	fmt.Printf("| SUCCESS ....... %s\n", success)
+
+	fmt.Printf("| ERRORS ........ %d\n", len(res.Errors))
 	for i, err := range res.Errors {
-		fmt.Printf("ERROR #%d: %v\n", i, err)
+		fmt.Printf("|     #%d: %s\n", i+1, err)
 	}
-	if len(res.Errors) > 0 {
-		fmt.Print("-----------------------\n")
+
+	fmt.Printf("| ACTIONS ....... %d\n", len(res.Actions))
+	for i, a := range res.Actions {
+		hash := []rune(a.Hash)
+		hashSub := string(hash[0:5]) + "..." + string(hash[len(hash)-5:])
+		fmt.Printf("|     #%d: %s\n", i+1, hashSub)
 	}
+
+	fmt.Printf("-----------------\n")
+}
+
+func runJob(sim *simulator.Simulator, jobID simulator.JobID) (*simulator.JobResult, error) {
+	f, err := jobs.Registry.Get(jobID)
+	if err != nil {
+		return nil, err
+	}
+	j, err := f.NewJob()
+	if err != nil {
+		return nil, err
+	}
+	return sim.RunJob(j)
 }

@@ -1,6 +1,12 @@
 package simulator
 
-import "log"
+import (
+	"log"
+	"time"
+
+	"github.com/xzor-dev/xzor/internal/xzor/action"
+	"github.com/xzor-dev/xzor/internal/xzor/network"
+)
 
 // Config contains options for the simulator.
 type Config struct{}
@@ -62,41 +68,66 @@ func (s *Simulator) RunJob(j Job) (*JobResult, error) {
 		return nil, ErrNoConfig
 	}
 
-	res := &JobResult{}
-	c := j.Config()
-	if c.ExecutionCount == 0 {
-		c.ExecutionCount = 1
+	res := &JobResult{
+		JobID:     j.JobID(),
+		StartTime: time.Now(),
 	}
-	errChan := make(chan error, c.ExecutionCount)
-	log.Printf("executing job %s %d time(s)", j.JobID(), c.ExecutionCount)
-	for i := 0; i < c.ExecutionCount; i++ {
+	if a, err := s.runJob(j); err != nil {
+		res.Failed = true
+		res.AddError(err)
+	} else if a != nil {
+		res.AddAction(a)
+	}
+	res.EndTime = time.Now()
+
+	return res, nil
+}
+
+func (s *Simulator) runJob(j Job) (*action.Action, error) {
+	params := &JobParams{}
+	a, err := j.Execute(params)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.Network.Push(a)
+	if err != nil {
+		return nil, err
+	}
+
+	totalNodes := len(s.Network.Nodes)
+	actions := make(chan *action.Action, totalNodes)
+	for i := 0; i < totalNodes; i++ {
 		go func(i int) {
-			log.Printf("execution #%d of job %s", i+1, j.JobID())
-			params := &JobParams{
-				ExecutionIndex: i,
-			}
-			a, err := j.Execute(params)
+			node, err := s.Network.Node(i)
 			if err != nil {
-				errChan <- err
+				actions <- nil
 				return
 			}
-			res.AddAction(a)
 
-			log.Printf("pushing action %s to network", a.Hash)
-			err = s.Network.Push(a)
-			if err != nil {
-				log.Printf("failed to push action to network: %v", err)
+			for {
+				a2, err := node.Action(a.Hash)
+				if err == network.ErrActionNotFound {
+					continue
+				} else if err != nil {
+					log.Printf("failed to get action from node #%d: %v", i, err)
+				}
+				actions <- a2
 			}
-			errChan <- err
 		}(i)
 	}
-	for i := 0; i < c.ExecutionCount; i++ {
-		err := <-errChan
-		res.TotalExecutions++
-		if err != nil {
-			res.Failed = true
-			res.Errors = append(res.Errors, err)
+
+	total := 0
+	for i := 0; i < totalNodes; i++ {
+		a := <-actions
+		if a == nil {
+			log.Printf("got a nil action")
+		} else {
+			total++
 		}
 	}
-	return res, nil
+
+	log.Printf("got %d actions from %d nodes", total, totalNodes)
+
+	return a, nil
 }

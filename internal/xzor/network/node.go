@@ -2,6 +2,7 @@ package network
 
 import (
 	"bufio"
+	"log"
 	"net"
 	"sync"
 
@@ -11,7 +12,7 @@ import (
 // Node handles sending messages to and receiving messages from nodes on the network.
 type Node struct {
 	actionChan  chan *action.Action
-	actionMap   map[action.Hash]bool
+	actionMap   map[action.Hash]*action.Action
 	connections []net.Conn
 	listeners   []net.Listener
 	mu          sync.Mutex
@@ -21,8 +22,18 @@ type Node struct {
 func NewNode() *Node {
 	return &Node{
 		actionChan: make(chan *action.Action),
-		actionMap:  make(map[action.Hash]bool),
+		actionMap:  make(map[action.Hash]*action.Action),
 	}
+}
+
+// Action is used to get actions from the node using their hash.
+func (n *Node) Action(hash action.Hash) (*action.Action, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.actionMap[hash] == nil {
+		return nil, ErrActionNotFound
+	}
+	return n.actionMap[hash], nil
 }
 
 // AddConnection adds a new remote connection to the node.
@@ -48,7 +59,7 @@ func (n *Node) Read() (*action.Action, error) {
 
 // Write sends an action to all registered connections.
 func (n *Node) Write(a *action.Action) error {
-	if n.actionMap[a.Hash] {
+	if n.actionMap[a.Hash] != nil {
 		return action.ErrDuplicateAction
 	}
 	data, err := a.Encode()
@@ -64,7 +75,7 @@ func (n *Node) handleIncomingData(data action.EncodedAction) error {
 	if err != nil {
 		return err
 	}
-	if n.actionMap[a.Hash] {
+	if n.actionMap[a.Hash] != nil {
 		return action.ErrDuplicateAction
 	}
 	go func() {
@@ -98,11 +109,16 @@ func (n *Node) handleListenerConnection(conn net.Conn) {
 
 func (n *Node) write(hash action.Hash, encodedAction action.EncodedAction) error {
 	n.mu.Lock()
-	n.actionMap[hash] = true
+	a, err := encodedAction.Decode()
+	if err != nil {
+		return err
+	}
+	n.actionMap[hash] = a
 	n.mu.Unlock()
 
 	data := append(encodedAction, '\n')
 	for _, conn := range n.connections {
+		log.Printf("writing action '%s' to remote connection", hash)
 		go conn.Write(data)
 	}
 	return nil

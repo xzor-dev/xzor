@@ -2,5 +2,5 @@ package network
 
 import "errors"
 
-// ErrNoMessages indicates that a node has no messages to read from its queue.
-var ErrNoMessages = errors.New("no messages in queue")
+// ErrActionNotFound indicates that an action could not be found.
+var ErrActionNotFound = errors.New("action not found")

@@ -31,8 +31,11 @@ type JobParams struct {
 // JobResult contains information for a single job.
 type JobResult struct {
 	Actions         []*action.Action
-	Failed          bool
+	EndTime         time.Time
 	Errors          []error
+	Failed          bool
+	JobID           JobID
+	StartTime       time.Time
 	TotalExecutions int
 
 	mux sync.Mutex
@@ -42,6 +45,13 @@ type JobResult struct {
 func (r *JobResult) AddAction(a *action.Action) {
 	r.mux.Lock()
 	r.Actions = append(r.Actions, a)
+	r.mux.Unlock()
+}
+
+// AddError add an error to the job result in a thread-safe way.
+func (r *JobResult) AddError(err error) {
+	r.mux.Lock()
+	r.Errors = append(r.Errors, err)
 	r.mux.Unlock()
 }
 

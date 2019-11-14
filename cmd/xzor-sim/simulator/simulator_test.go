@@ -64,10 +64,8 @@ func TestSimulator(t *testing.T) {
 	})
 
 	jobA := &testJob{
-		jobID: "job-a",
-		config: &simulator.JobConfig{
-			ExecutionCount: 2,
-		},
+		jobID:  "job-a",
+		config: &simulator.JobConfig{},
 		callback: func(p *simulator.JobParams) (*action.Action, error) {
 			hash, err := common.NewRandomHash(10)
 			if err != nil {
@@ -89,9 +87,6 @@ func TestSimulator(t *testing.T) {
 			for i, err := range jobRes.Errors {
 				log.Printf("error #%d: %v", i+1, err)
 			}
-		}
-		if jobRes.TotalExecutions != 2 {
-			t.Fatalf("expected 2 executions, got %d", jobRes.TotalExecutions)
 		}
 
 		a1 := <-lastNodeActions

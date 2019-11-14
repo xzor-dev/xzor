@@ -1,7 +1,7 @@
 package jobs
 
 import (
-	"errors"
+	"time"
 
 	"github.com/xzor-dev/xzor/cmd/xzor-sim/simulator"
 	"github.com/xzor-dev/xzor/internal/xzor/action"
@@ -26,7 +26,8 @@ func (j *TestJob) JobID() simulator.JobID {
 }
 
 func (j *TestJob) Execute(p *simulator.JobParams) (*action.Action, error) {
-	return nil, errors.New("test job is broken")
+	time.Sleep(time.Second * 2)
+	return action.New(sampleJobID, "sample-cmd", nil)
 }
 
 type SampleJobFactory struct{}
